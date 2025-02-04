@@ -227,6 +227,8 @@ obj/
 .idea/gradle.xml
 .idea/jarRepositories.xml
 .idea/navEditor.xml
+.idea
+.DS_Store
 
 # Legacy Eclipse project files
 .classpath
