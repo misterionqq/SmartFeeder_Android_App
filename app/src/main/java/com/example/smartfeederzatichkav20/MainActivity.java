@@ -1,5 +1,6 @@
 package com.example.smartfeederzatichkav20;
 
+import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -12,6 +13,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
+import androidx.annotation.OptIn;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
@@ -20,6 +22,7 @@ import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.util.UnstableApi;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -157,7 +160,52 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         btnDisconnectSocket.setOnClickListener(v -> disconnectFromSocketServer());
         btnRequestStream.setOnClickListener(v -> requestStream());
         btnStopStream.setOnClickListener(v -> stopStream());
+
+        playerView.setFullscreenButtonClickListener(isFullscreen -> {
+            if (isFullscreen) {
+                // Пользователь нажал кнопку "войти в полноэкранный режим"
+                openFullscreenActivity(player); // Передаем текущий плеер для получения данных
+            }
+            // Кнопка выхода из полноэкранного режима в MainActivity не нужна,
+            // так как выход будет через onBackPressed в FullscreenVideoActivity
+        });
+
+// То же самое для streamPlayerView, если для стрима тоже нужен fullscreen
+        streamPlayerView.setFullscreenButtonClickListener(isFullscreen -> {
+            if (isFullscreen) {
+                openFullscreenActivity(streamPlayer); // Передаем плеер стрима
+            }
+        });
     }
+
+    @OptIn(markerClass = UnstableApi.class) private void openFullscreenActivity(ExoPlayer currentPlayer) {
+        if (currentPlayer == null || currentPlayer.getCurrentMediaItem() == null) {
+            Toast.makeText(this, "Нет активного видео для полноэкранного режима", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        Uri videoUri = currentPlayer.getCurrentMediaItem().localConfiguration != null
+                ? currentPlayer.getCurrentMediaItem().localConfiguration.uri
+                : null; // Получаем URI текущего элемента
+
+        if (videoUri == null) {
+            Toast.makeText(this, "Не удалось получить URI видео", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        long currentPosition = currentPlayer.getCurrentPosition();
+        boolean playWhenReady = currentPlayer.getPlayWhenReady();
+
+        // Паузим плеер в MainActivity перед переходом
+        currentPlayer.pause();
+
+        Intent intent = new Intent(this, FullscreenVideoActivity.class);
+        intent.putExtra(FullscreenVideoActivity.EXTRA_VIDEO_URI, videoUri.toString());
+        intent.putExtra(FullscreenVideoActivity.EXTRA_VIDEO_POSITION, currentPosition);
+        intent.putExtra(FullscreenVideoActivity.EXTRA_PLAY_WHEN_READY, playWhenReady);
+        startActivity(intent); // Запускаем новую Activity
+    }
+
     /**
      * Загружает список видео с сервера
      */
