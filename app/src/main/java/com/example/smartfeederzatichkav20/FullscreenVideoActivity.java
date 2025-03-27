@@ -68,8 +68,14 @@ import androidx.media3.ui.PlayerView;
         player.seekTo(startPosition);
         player.setPlayWhenReady(startPlayWhenReady);
         player.prepare();
-    }
 
+        playerView.setFullscreenButtonClickListener(isFullscreen -> {
+            if (!isFullscreen) {
+                // Пользователь нажал стандартную кнопку для ВЫХОДА
+                finishActivityWithResult();
+            }
+        });
+    }
     private void releasePlayer() {
         if (player != null) {
             // Сохраняем текущую позицию и состояние для возможного возврата
@@ -136,11 +142,23 @@ import androidx.media3.ui.PlayerView;
     // Обработка нажатия кнопки "Назад" - просто закрываем Activity
     @Override
     public void onBackPressed() {
-        // Можно добавить передачу текущей позиции обратно в MainActivity, если нужно
+        finishActivityWithResult();
+        super.onBackPressed();
+    }
+
+    private void finishActivityWithResult() {
         Intent resultIntent = new Intent();
-        resultIntent.putExtra(EXTRA_VIDEO_POSITION, player != null ? player.getCurrentPosition() : startPosition);
-        resultIntent.putExtra(EXTRA_PLAY_WHEN_READY, player != null ? player.getPlayWhenReady() : startPlayWhenReady);
-        setResult(Activity.RESULT_OK, resultIntent);
-        super.onBackPressed(); // Закрывает текущую Activity
+        long position = startPosition;
+        boolean playWhenReady = this.startPlayWhenReady;
+
+        if (player != null) {
+            position = player.getCurrentPosition();
+            playWhenReady = player.getPlayWhenReady();
+        }
+
+        resultIntent.putExtra(EXTRA_VIDEO_POSITION, position);
+        resultIntent.putExtra(EXTRA_PLAY_WHEN_READY, playWhenReady);
+        setResult(RESULT_OK, resultIntent);
+        finish();
     }
 }

@@ -1,5 +1,6 @@
 package com.example.smartfeederzatichkav20;
 
+import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -13,6 +14,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
+import androidx.activity.result.ActivityResult;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.OptIn;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
@@ -75,6 +79,64 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     private ApiService apiService;
     private Socket socket;
     private String streamPath;
+
+    private ExoPlayer activePlayerForFullscreen = null;
+
+    private final ActivityResultLauncher<Intent> fullscreenLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            this::handleFullscreenResult // Ссылка на метод обработки результата
+    );
+
+    private void handleFullscreenResult(ActivityResult result) {
+        if (activePlayerForFullscreen == null) {
+            Log.w(TAG, "handleFullscreenResult: No active player was tracked.");
+            return; // Нечего делать, если не знаем, какой плеер возвращается
+        }
+
+        // Определяем, какой PlayerView был активен
+        PlayerView relevantPlayerView = (activePlayerForFullscreen == player) ? playerView : streamPlayerView;
+
+        // Проверяем, вернулся ли результат успешно и есть ли данные
+        if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
+            long returnedPosition = result.getData().getLongExtra(FullscreenVideoActivity.EXTRA_VIDEO_POSITION, C.TIME_UNSET);
+            boolean playWhenReady = result.getData().getBooleanExtra(FullscreenVideoActivity.EXTRA_PLAY_WHEN_READY, true);
+
+            // Если вернулась валидная позиция
+            if (returnedPosition != C.TIME_UNSET) {
+                Log.d(TAG, "Resuming playback at position: " + returnedPosition + " playWhenReady: " + playWhenReady);
+                activePlayerForFullscreen.seekTo(returnedPosition);
+                activePlayerForFullscreen.setPlayWhenReady(playWhenReady);
+                // Если нужно гарантированно начать играть, если playWhenReady = true
+                if (playWhenReady) {
+                    activePlayerForFullscreen.play(); // Начинаем играть, если нужно
+                } else {
+                    // Подготовка может быть нужна, если плеер не готов играть сразу после seekTo
+                    // activePlayerForFullscreen.prepare();
+                }
+            } else {
+                // Позиция не вернулась, просто продолжаем играть с того места, где остановились
+                Log.w(TAG, "Returned position is TIME_UNSET, resuming from previous state.");
+                activePlayerForFullscreen.play(); // Просто возобновляем
+            }
+        } else {
+            // Пользователь вышел, не сохранив позицию, или произошла ошибка.
+            // Просто возобновляем воспроизведение.
+            Log.d(TAG, "Fullscreen cancelled or failed, resuming playback.");
+            activePlayerForFullscreen.play(); // Просто возобновляем
+        }
+
+        // *** КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Обновляем состояние PlayerView ***
+        if (relevantPlayerView != null) {
+            // Временно отсоединяем плеер
+            relevantPlayerView.setPlayer(null);
+            // Снова присоединяем тот же плеер. Это заставит PlayerView
+            // перерисовать контроллер и обновить состояние кнопки fullscreen.
+            relevantPlayerView.setPlayer(activePlayerForFullscreen);
+        }
+        // ***********************************************************
+
+        activePlayerForFullscreen = null; // Сбрасываем трекер
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -178,7 +240,8 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         });
     }
 
-    @OptIn(markerClass = UnstableApi.class) private void openFullscreenActivity(ExoPlayer currentPlayer) {
+    @OptIn(markerClass = UnstableApi.class) // Добавь эту аннотацию
+    private void openFullscreenActivity(ExoPlayer currentPlayer) {
         if (currentPlayer == null || currentPlayer.getCurrentMediaItem() == null) {
             Toast.makeText(this, "Нет активного видео для полноэкранного режима", Toast.LENGTH_SHORT).show();
             return;
@@ -199,11 +262,14 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         // Паузим плеер в MainActivity перед переходом
         currentPlayer.pause();
 
+        activePlayerForFullscreen = currentPlayer; // Запоминаем, какой плеер ушел
+
         Intent intent = new Intent(this, FullscreenVideoActivity.class);
         intent.putExtra(FullscreenVideoActivity.EXTRA_VIDEO_URI, videoUri.toString());
         intent.putExtra(FullscreenVideoActivity.EXTRA_VIDEO_POSITION, currentPosition);
         intent.putExtra(FullscreenVideoActivity.EXTRA_PLAY_WHEN_READY, playWhenReady);
-        startActivity(intent); // Запускаем новую Activity
+
+        fullscreenLauncher.launch(intent); // Используем лаунчер для запуска и получения результата
     }
 
     /**
