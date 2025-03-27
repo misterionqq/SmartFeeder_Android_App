@@ -57,13 +57,13 @@ dependencies {
     implementation("io.socket:socket.io-client:2.0.0")
 
     // ExoPlayer для воспроизведения видео и стримов
-    implementation("androidx.media3:media3-exoplayer:1.2.1")
-    implementation("androidx.media3:media3-exoplayer-dash:1.2.1")
-    implementation("androidx.media3:media3-exoplayer-hls:1.2.1")
-    implementation("androidx.media3:media3-exoplayer-rtsp:1.2.1")
-    implementation("androidx.media3:media3-ui:1.2.1")
-    implementation("androidx.media3:media3-session:1.2.1")
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-dash:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-rtsp:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
+    implementation("androidx.media3:media3-session:1.4.1")
     
     // RTMP-поддержка для ExoPlayer
-    implementation("androidx.media3:media3-datasource-rtmp:1.2.1")
+    implementation("androidx.media3:media3-datasource-rtmp:1.4.1")
 }

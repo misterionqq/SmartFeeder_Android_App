@@ -2,10 +2,12 @@ package com.example.smartfeederzatichkav20;
 
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ProgressBar;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -14,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
@@ -114,11 +117,22 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         // Инициализация ExoPlayer для видеозаписей
         player = new ExoPlayer.Builder(this).build();
         playerView.setPlayer(player);
-        
         // Инициализация ExoPlayer для стрима
         streamPlayer = new ExoPlayer.Builder(this).build();
         streamPlayerView.setPlayer(streamPlayer);
-        
+
+        // Настройка обработчика ошибок для плеера записей
+        player.addListener(new Player.Listener() {
+            @Override
+            public void onPlaybackStateChanged(int playbackState) {
+                Log.d("MainActivity", "Playback state changed: " + playbackState); // ДОБАВИТЬ ЛОГИРОВАНИЕ
+                if (playbackState == Player.STATE_READY) {
+                    Log.d("MainActivity", "Player is READY"); // ДОБАВИТЬ ЛОГИРОВАНИЕ
+                }
+            }
+            // ... (остальные методы слушателя)
+        });
+
         // Настройка обработчика ошибок для плеера стрима
         streamPlayer.addListener(new Player.Listener() {
             @Override
@@ -144,7 +158,6 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         btnRequestStream.setOnClickListener(v -> requestStream());
         btnStopStream.setOnClickListener(v -> stopStream());
     }
-
     /**
      * Загружает список видео с сервера
      */
@@ -836,7 +849,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     @Override
     public void onVideoClick(VideoItem videoItem) {
         playerView.setVisibility(View.VISIBLE);
-        
+
         // Создание MediaItem из URL видео
         MediaItem mediaItem = MediaItem.fromUri(Uri.parse(videoItem.getUrl()));
         
