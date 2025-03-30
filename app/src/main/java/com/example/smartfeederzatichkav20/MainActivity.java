@@ -681,6 +681,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
                     hideStreamUI();
                     Toast.makeText(MainActivity.this, "Трансляция остановлена сервером", Toast.LENGTH_SHORT).show();
                     currentStreamingFeederId = null; // Сбрасываем ID текущего стрима
+                    connectionManager.disconnect(); // Отключаемся от сокета
                 });
             }
 
@@ -694,6 +695,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
                     stopStreamPlayback();
                     hideStreamUI();
                     currentStreamingFeederId = null; // Сбрасываем ID текущего стрима
+                    connectionManager.disconnect(); // Отключаемся от сокета
                 });
             }
         });
