@@ -35,6 +35,13 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.textfield.TextInputEditText;
 
+import android.widget.ArrayAdapter; // Для выпадающего списка
+import android.widget.AutoCompleteTextView; // Для выпадающего списка
+import com.google.android.material.textfield.TextInputLayout; // Для контейнера списка
+
+import java.util.ArrayList; // Для хранения списка кормушек
+
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -52,8 +59,11 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     private static final String TAG = "MainActivity";
     private static final String DEFAULT_FEEDER_ID = "750cec99-5311-4055-8da0-2aad1e531d6c"; // Keep default feeder ID
 
-    // --- Removed UI elements for server/client ID ---
-    private TextInputEditText etFeederId;
+    // --- Изменено UI для выбора кормушки ---
+    // private TextInputEditText etFeederId; // Удалено
+    private TextInputLayout tilFeederId;        // Добавлен контейнер
+    private AutoCompleteTextView actvFeederId; // Добавлен AutoCompleteTextView
+    private Button btnRefreshFeeders;         // Добавлена кнопка обновления
     private Button btnLoadVideos;
     private Button btnRequestStream;
     private Button btnStopStream;
@@ -72,12 +82,18 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     private ApiService apiService;
     // --- Removed Socket --- private Socket socket;
     private String streamPath;
+    private String currentStreamingFeederId = null; // ID кормушки, которая сейчас стримит
 
     private ExoPlayer activePlayerForFullscreen = null;
 
     // Managers
     private SettingsManager settingsManager;
     private ConnectionManager connectionManager;
+
+    // Данные для списка кормушек
+    private List<String> availableFeederIds = new ArrayList<>();
+    private ArrayAdapter<String> feederAdapter;
+
 
     // Activity Result Launcher for Fullscreen
     private final ActivityResultLauncher<Intent> fullscreenLauncher = registerForActivityResult(
@@ -143,11 +159,14 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
 
         // Initialize Managers
         settingsManager = SettingsManager.getInstance(this);
-        connectionManager = ConnectionManager.getInstance(getApplicationContext()); // Use ApplicationContext
+        connectionManager = ConnectionManager.getInstance(getApplicationContext());
 
         // Initialize Views
-        etFeederId = findViewById(R.id.etFeederId);
-        etFeederId.setText(DEFAULT_FEEDER_ID); // Keep default feeder ID
+        // --- Инициализация новых элементов ---
+        tilFeederId = findViewById(R.id.tilFeederId);
+        actvFeederId = findViewById(R.id.actvFeederId);
+        btnRefreshFeeders = findViewById(R.id.btnRefreshFeeders);
+        // --- Остальные как были ---
         btnLoadVideos = findViewById(R.id.btnLoadVideos);
         btnRequestStream = findViewById(R.id.btnRequestStream);
         btnStopStream = findViewById(R.id.btnStopStream);
@@ -169,32 +188,84 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         // Setup Button Listeners
         setupButtonClickListeners();
 
-        // Observe Connection State from ConnectionManager
+        // --- Настройка адаптера для списка кормушек ---
+        setupFeederDropdown();
+
+        // Observe Connection State
         connectionManager.getConnectionState().observe(this, state -> {
             updateConnectionStatusDisplay();
-            // Enable/disable buttons based on connection state if needed
             boolean connected = state == ConnectionManager.ConnectionState.CONNECTED;
-            // btnLoadVideos.setEnabled(connected); // Example: Requires connection to load videos? Maybe not.
             btnRequestStream.setEnabled(connected);
-            // btnStopStream is handled internally by its visibility
+            btnRefreshFeeders.setEnabled(connected); // Можно обновлять список только при подключении
+            btnLoadVideos.setEnabled(connected);     // Загрузка видео тоже требует подключения (валидного адреса сервера)
+
+            // Если подключились, пытаемся загрузить список кормушек
+            if(connected && availableFeederIds.isEmpty()) {
+                initializeApiService(); // Убедимся, что ApiService готов
+                if (apiService != null) {
+                    loadFeederList();
+                }
+            }
         });
 
-
-        // Attempt auto-connect on startup if settings are available
+        // Попытка авто-подключения и инициализация ApiService
+        initializeApiService(); // Инициализируем сразу
         if (settingsManager.areSettingsAvailable() && !connectionManager.isConnected()) {
-            attemptAutoConnect();
+            attemptAutoConnect(); // Авто-подключение вызовет обновление статуса и загрузку списка
         } else {
-            updateConnectionStatusDisplay(); // Update display even if not auto-connecting
+            updateConnectionStatusDisplay(); // Обновить статус в любом случае
+            // Если уже подключены (например, активность пересоздалась), но списка нет
+            if (connectionManager.isConnected() && availableFeederIds.isEmpty() && apiService != null) {
+                loadFeederList();
+            }
         }
     }
 
+    private void initializeApiService() {
+        String serverAddress = settingsManager.getServerAddress();
+        if (!TextUtils.isEmpty(serverAddress)) {
+            try {
+                // Создаем или пересоздаем Retrofit клиент
+                Retrofit retrofit = new Retrofit.Builder()
+                        .baseUrl("http://" + serverAddress + "/") // Убедитесь, что адрес корректный
+                        .addConverterFactory(GsonConverterFactory.create())
+                        .build();
+                apiService = retrofit.create(ApiService.class);
+                Log.d(TAG, "ApiService инициализирован для адреса: " + serverAddress);
+            } catch (IllegalArgumentException e) {
+                Log.e(TAG, "Неверный формат адреса сервера при инициализации ApiService: " + serverAddress, e);
+                apiService = null; // Сбрасываем, если адрес некорректен
+                Toast.makeText(this, "Неверный формат адреса сервера в настройках.", Toast.LENGTH_LONG).show();
+            }
+        } else {
+            Log.w(TAG, "Адрес сервера не настроен, ApiService не инициализирован.");
+            apiService = null;
+        }
+    }
+
+
+    private void setupFeederDropdown() {
+        // Инициализируем адаптер (сначала пустой или с сообщением)
+        feederAdapter = new ArrayAdapter<>(this, android.R.layout.simple_dropdown_item_1line, availableFeederIds);
+        actvFeederId.setAdapter(feederAdapter);
+
+        // Опционально: Установить текст по умолчанию, если список пуст
+        if (availableFeederIds.isEmpty()) {
+            // actvFeederId.setText("Нажмите Обновить", false); // Можно так, но может мешать выбору
+        }
+
+        // Опционально: Загрузить и установить ранее выбранную кормушку
+        // loadAndSetLastFeeder();
+    }
+
+    // ... (setupRecyclerView, setupPlayers как были) ...
     private void setupRecyclerView() {
         videoAdapter = new VideoAdapter();
         videoAdapter.setOnVideoClickListener(this);
         LinearLayoutManager layoutManager = new LinearLayoutManager(this);
         layoutManager.setInitialPrefetchItemCount(4);
         rvVideoList.setLayoutManager(layoutManager);
-        rvVideoList.setNestedScrollingEnabled(false); // Keep this
+        rvVideoList.setNestedScrollingEnabled(false);
         rvVideoList.setAdapter(videoAdapter);
     }
 
@@ -207,7 +278,6 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
             public void onPlaybackStateChanged(int playbackState) {
                 Log.d(TAG, "Record Player state changed: " + playbackState);
                 if(playbackState == Player.STATE_ENDED) {
-                    // Optionally hide player or show message when recording finishes
                     playerView.setVisibility(View.GONE);
                     tvRecordedVideoTitle.setVisibility(View.GONE);
                 }
@@ -229,7 +299,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
             public void onPlayerError(@NonNull PlaybackException error) {
                 Log.e(TAG, "Ошибка воспроизведения стрима: " + error.getMessage(), error);
                 Toast.makeText(MainActivity.this, "Ошибка воспроизведения стрима", Toast.LENGTH_SHORT).show();
-                hideStreamUI(); // Hide UI on stream error
+                hideStreamUI();
             }
 
             @Override
@@ -237,7 +307,6 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
                 Log.d(TAG,"Stream Player state changed: " + state);
                 if (state == Player.STATE_BUFFERING) {
                     Log.d(TAG, "Буферизация стрима...");
-                    // Show buffering indicator? PlayerView might do this automatically.
                 } else if (state == Player.STATE_ENDED) {
                     Log.d(TAG, "Воспроизведение стрима завершено (или поток прерван)");
                     Toast.makeText(MainActivity.this, "Стрим завершен", Toast.LENGTH_SHORT).show();
@@ -249,13 +318,15 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         });
     }
 
+
     private void setupButtonClickListeners() {
         btnLoadVideos.setOnClickListener(v -> loadVideos());
         btnRequestStream.setOnClickListener(v -> requestStream());
         btnStopStream.setOnClickListener(v -> stopStream());
         btnSettings.setOnClickListener(v -> openSettings());
+        btnRefreshFeeders.setOnClickListener(v -> loadFeederList()); // Устанавливаем слушатель на новую кнопку
 
-        // Fullscreen listeners
+        // Fullscreen listeners (как были)
         playerView.setFullscreenButtonClickListener(isFullscreen -> {
             if (isFullscreen) openFullscreenActivity(player);
         });
@@ -264,14 +335,15 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         });
     }
 
+    // ... (updateConnectionStatusDisplay, attemptAutoConnect, openSettings, openFullscreenActivity как были) ...
     private void updateConnectionStatusDisplay() {
         ConnectionManager.ConnectionState state = connectionManager.getConnectionState().getValue();
         String statusText = "Статус: ";
         if (state != null) {
             switch (state) {
                 case CONNECTED: statusText += "Подключено"; break;
-                case CONNECTING_FOR_ID: statusText += "Получение ID..."; break; // Обновлено
-                case CONNECTING_WITH_ID: statusText += "Подключение..."; break; // Обновлено
+                case CONNECTING_FOR_ID: statusText += "Получение ID..."; break;
+                case CONNECTING_WITH_ID: statusText += "Подключение..."; break;
                 case DISCONNECTED: statusText += "Отключено"; break;
                 case ERROR: statusText += "Ошибка"; break;
                 default: statusText += "Неизвестно"; break;
@@ -291,28 +363,27 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
             Toast.makeText(this, "Авто-подключение...", Toast.LENGTH_SHORT).show();
             connectionManager.connectWithId(serverAddress, clientId, new ConnectionManager.ConnectionCallback() {
                 @Override
-                public void onSuccess(String clientId) { /* Not used in connectWithId */ }
+                public void onSuccess(String clientId) { /* Not used */ }
 
                 @Override
                 public void onConnected() {
-                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Авто-подключение успешно", Toast.LENGTH_SHORT).show());
+                    runOnUiThread(() -> {
+                        Toast.makeText(MainActivity.this, "Авто-подключение успешно", Toast.LENGTH_SHORT).show();
+                        // После успешного подключения пытаемся загрузить кормушки
+                        initializeApiService(); // На всякий случай переинициализируем
+                        if (apiService != null) {
+                            loadFeederList();
+                        }
+                    });
                 }
 
                 @Override
                 public void onError(String message) {
-                    runOnUiThread(() -> {
-                        Toast.makeText(MainActivity.this, "Ошибка авто-подключения: " + message, Toast.LENGTH_LONG).show();
-                        // Optional: Prompt user to check settings
-                        // showGoToSettingsDialog("Не удалось автоматически подключиться. Проверить настройки?");
-                    });
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Ошибка авто-подключения: " + message, Toast.LENGTH_LONG).show());
                 }
             });
         } else {
             Log.d(TAG, "Нет сохраненных настроек для авто-подключения.");
-            // Optional: Prompt user to go to settings if they haven't before
-            // if (!settingsManager.wereSettingsEverSaved()) { // Need to add this flag to SettingsManager if desired
-            //    showGoToSettingsDialog("Пожалуйста, настройте подключение к серверу.");
-            // }
         }
     }
 
@@ -346,33 +417,79 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         fullscreenLauncher.launch(intent);
     }
 
-
-    private void loadVideos() {
-        String serverAddress = settingsManager.getServerAddress();
-
-        if (TextUtils.isEmpty(serverAddress)) {
-            Toast.makeText(this, "Адрес сервера не настроен. Зайдите в Настройки.", Toast.LENGTH_LONG).show();
-            return;
+    // --- НОВЫЙ МЕТОД: Загрузка списка кормушек ---
+    private void loadFeederList() {
+        if (apiService == null) {
+            Log.w(TAG, "ApiService не инициализирован, не могу загрузить кормушки.");
+            // Попробовать инициализировать снова?
+            initializeApiService();
+            if (apiService == null) {
+                Toast.makeText(this, "Не удалось инициализировать API. Проверьте адрес сервера.", Toast.LENGTH_SHORT).show();
+                return;
+            }
         }
 
         progressBar.setVisibility(View.VISIBLE);
+        Log.d(TAG, "Загрузка списка кормушек...");
 
-        // Build Retrofit client each time? Or create once? For now, create each time.
-        // Consider creating a dedicated ApiClient class later.
-        try {
-            Retrofit retrofit = new Retrofit.Builder()
-                    .baseUrl("http://" + serverAddress + "/") // Ensure address format is correct
-                    .addConverterFactory(GsonConverterFactory.create())
-                    .build();
-            apiService = retrofit.create(ApiService.class);
-        } catch (IllegalArgumentException e) {
-            Log.e(TAG, "Неверный формат адреса сервера: " + serverAddress, e);
-            Toast.makeText(this, "Неверный формат адреса сервера.", Toast.LENGTH_LONG).show();
-            progressBar.setVisibility(View.GONE);
+        apiService.getFeeders().enqueue(new Callback<List<String>>() {
+            @Override
+            public void onResponse(@NonNull Call<List<String>> call, @NonNull Response<List<String>> response) {
+                progressBar.setVisibility(View.GONE);
+                if (response.isSuccessful() && response.body() != null) {
+                    List<String> feeders = response.body();
+                    availableFeederIds.clear();
+                    if (feeders.isEmpty()) {
+                        Toast.makeText(MainActivity.this, "Активных кормушек не найдено", Toast.LENGTH_SHORT).show();
+                        // Добавляем сообщение в адаптер
+                        availableFeederIds.add("Нет активных кормушек");
+                    } else {
+                        availableFeederIds.addAll(feeders);
+                        Toast.makeText(MainActivity.this, "Загружено " + feeders.size() + " кормушек", Toast.LENGTH_SHORT).show();
+                    }
+                    // Обновляем адаптер
+                    feederAdapter.notifyDataSetChanged();
+
+                    // Опционально: Попробовать выбрать ранее сохраненную кормушку
+                    // String lastFeeder = settingsManager.getLastSelectedFeeder();
+                    // if (lastFeeder != null && availableFeederIds.contains(lastFeeder)) {
+                    //     actvFeederId.setText(lastFeeder, false);
+                    // } else if (!availableFeederIds.isEmpty() && !availableFeederIds.get(0).equals("Нет активных кормушек")) {
+                    // Выбрать первую доступную, если нет сохраненной
+                    //     actvFeederId.setText(availableFeederIds.get(0), false);
+                    //} else {
+                    //      actvFeederId.setText("", false); // Очистить, если список пуст
+                    //}
+
+                } else {
+                    try {
+                        String errorBody = response.errorBody() != null ? response.errorBody().string() : "Нет тела ошибки";
+                        Log.e(TAG, "Ошибка загрузки кормушек: " + response.code() + " - " + response.message() + " Body: " + errorBody);
+                        Toast.makeText(MainActivity.this, "Ошибка загрузки кормушек: " + response.code(), Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) {
+                        Log.e(TAG, "Ошибка чтения тела ошибки (кормушки)", e);
+                        Toast.makeText(MainActivity.this, "Ошибка загрузки кормушек: " + response.code(), Toast.LENGTH_SHORT).show();
+                    }
+                }
+            }
+
+            @Override
+            public void onFailure(@NonNull Call<List<String>> call, @NonNull Throwable t) {
+                progressBar.setVisibility(View.GONE);
+                Log.e(TAG, "Сетевая ошибка загрузки кормушек", t);
+                Toast.makeText(MainActivity.this, "Ошибка сети при загрузке кормушек: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    // ... (loadVideos как был, но использует уже инициализированный apiService) ...
+    private void loadVideos() {
+        if (apiService == null) {
+            Log.w(TAG, "ApiService не инициализирован, не могу загрузить видео.");
+            Toast.makeText(this, "Не удалось подключиться к API. Проверьте адрес сервера.", Toast.LENGTH_SHORT).show();
             return;
         }
-
-
+        progressBar.setVisibility(View.VISIBLE);
         apiService.getVideos().enqueue(new Callback<List<VideoItem>>() {
             @Override
             public void onResponse(@NonNull Call<List<VideoItem>> call, @NonNull Response<List<VideoItem>> response) {
@@ -407,35 +524,49 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     }
 
 
+    // --- ИЗМЕНЕНО: requestStream ---
     private void requestStream() {
-        String feederId = etFeederId.getText().toString().trim();
-        String clientId = settingsManager.getClientId(); // Get client ID from settings
+        // Получаем выбранное значение из AutoCompleteTextView
+        String selectedFeederId = actvFeederId.getText().toString().trim();
+        String clientId = settingsManager.getClientId(); // ID клиента все еще нужен
 
         if (!connectionManager.isConnected() || clientId == null) {
             Toast.makeText(this, "Нет подключения к серверу или отсутствует ID клиента. Проверьте настройки.", Toast.LENGTH_LONG).show();
             return;
         }
 
-        if (TextUtils.isEmpty(feederId)) {
-            etFeederId.setError("Введите ID кормушки");
-            etFeederId.requestFocus();
-            // Toast.makeText(this, "Введите идентификатор кормушки", Toast.LENGTH_SHORT).show();
+        // Проверяем, выбрана ли кормушка
+        if (TextUtils.isEmpty(selectedFeederId) || !availableFeederIds.contains(selectedFeederId)) {
+            // Устанавливаем ошибку для TextInputLayout, а не для AutoCompleteTextView
+            tilFeederId.setError("Пожалуйста, выберите кормушку из списка");
+            actvFeederId.requestFocus();
+            // Toast.makeText(this, "Выберите кормушку из списка", Toast.LENGTH_SHORT).show();
             return;
         } else {
-            etFeederId.setError(null); // Clear error if any
+            tilFeederId.setError(null); // Убираем ошибку, если она была
         }
 
+        // Если уже идет стрим с другой кормушки, останавливаем его
+        if (currentStreamingFeederId != null && !currentStreamingFeederId.equals(selectedFeederId)) {
+            Log.d(TAG, "Запрошен стрим с другой кормушки, останавливаем предыдущий (" + currentStreamingFeederId + ")");
+            stopStreamPlayback(); // Останавливаем локальное воспроизведение
+            hideStreamUI();
+            // Не отправляем stopStream на сервер, так как сервер сам остановит, когда последний зритель уйдет
+        }
 
         progressBar.setVisibility(View.VISIBLE);
-        Toast.makeText(this, "Запрос трансляции...", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Запрос трансляции для " + selectedFeederId, Toast.LENGTH_SHORT).show();
 
-        connectionManager.requestStream(feederId, new ConnectionManager.StreamCallback() {
+        connectionManager.requestStream(selectedFeederId, new ConnectionManager.StreamCallback() {
             @Override
             public void onSuccess(String receivedStreamPath) {
                 runOnUiThread(() -> {
                     progressBar.setVisibility(View.GONE);
-                    streamPath = receivedStreamPath; // Store the path
-                    startStreamPlayback(streamPath); // Start playback
+                    streamPath = receivedStreamPath;
+                    currentStreamingFeederId = selectedFeederId; // Сохраняем ID текущей стримящей кормушки
+                    startStreamPlayback(streamPath);
+                    // Опционально: Сохранить выбранную кормушку
+                    // settingsManager.saveLastSelectedFeeder(selectedFeederId);
                 });
             }
 
@@ -445,51 +576,68 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
                     progressBar.setVisibility(View.GONE);
                     Log.e(TAG, "Ошибка запроса стрима: " + message);
                     Toast.makeText(MainActivity.this, "Ошибка запроса стрима: " + message, Toast.LENGTH_LONG).show();
+                    currentStreamingFeederId = null; // Сбрасываем, если ошибка
                 });
             }
         });
     }
 
-    // Renamed from startStream to avoid confusion with connectionManager.requestStream
+    // ... (startStreamPlayback как был) ...
     private void startStreamPlayback(String streamPath) {
         String serverAddress = settingsManager.getServerAddress();
         if (serverAddress == null) {
             Toast.makeText(this, "Адрес сервера не найден", Toast.LENGTH_SHORT).show();
+            hideStreamUI(); // Скрываем UI если не можем начать
             return;
         }
-
         try {
             String serverIp = serverAddress;
             if (serverAddress.contains(":")) {
                 serverIp = serverAddress.substring(0, serverAddress.indexOf(":"));
             }
-
             String path = streamPath;
             if (path.startsWith("/")) {
                 path = path.substring(1);
             }
-
-            String rtmpUrl = "rtmp://" + serverIp + ":1935/" + path; // Standard RTMP port
+            String rtmpUrl = "rtmp://" + serverIp + ":1935/" + path;
             Log.d(TAG, "Подключение к RTMP стриму: " + rtmpUrl);
 
             if (streamPlayer != null) {
                 streamPlayer.stop();
                 streamPlayer.clearMediaItems();
             } else {
-                // Reinitialize player if it was released
                 streamPlayer = new ExoPlayer.Builder(this).build();
                 streamPlayerView.setPlayer(streamPlayer);
-                // Re-add listener if needed
-                // streamPlayer.addListener(...);
+                // re-add listener
+                streamPlayer.addListener(new Player.Listener() {
+                    @Override
+                    public void onPlayerError(@NonNull PlaybackException error) {
+                        Log.e(TAG, "Ошибка воспроизведения стрима: " + error.getMessage(), error);
+                        Toast.makeText(MainActivity.this, "Ошибка воспроизведения стрима", Toast.LENGTH_SHORT).show();
+                        hideStreamUI();
+                    }
+                    @Override
+                    public void onPlaybackStateChanged(int state) {
+                        Log.d(TAG,"Stream Player state changed: " + state);
+                        if (state == Player.STATE_BUFFERING) {
+                            Log.d(TAG, "Буферизация стрима...");
+                        } else if (state == Player.STATE_ENDED) {
+                            Log.d(TAG, "Воспроизведение стрима завершено (или поток прерван)");
+                            Toast.makeText(MainActivity.this, "Стрим завершен", Toast.LENGTH_SHORT).show();
+                            hideStreamUI();
+                        } else if (state == Player.STATE_READY) {
+                            Log.d(TAG, "Стрим готов к воспроизведению.");
+                        }
+                    }
+                });
             }
-
 
             MediaItem mediaItem = MediaItem.fromUri(Uri.parse(rtmpUrl));
             streamPlayer.setMediaItem(mediaItem);
             streamPlayer.prepare();
-            streamPlayer.play(); // Start playback
+            streamPlayer.play();
 
-            showStreamUI(); // Show player and controls
+            showStreamUI();
             Toast.makeText(this, "Трансляция запущена", Toast.LENGTH_SHORT).show();
 
         } catch (Exception e) {
@@ -500,29 +648,31 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     }
 
 
+    // --- ИЗМЕНЕНО: stopStream ---
     private void stopStream() {
-        String feederId = etFeederId.getText().toString().trim();
+        // ID берем из сохраненного состояния, а не из списка,
+        // чтобы остановить именно тот стрим, который идет
+        String feederIdToStop = currentStreamingFeederId;
 
-        if (!connectionManager.isConnected()) {
-            Toast.makeText(this, "Нет подключения для остановки стрима", Toast.LENGTH_SHORT).show();
-            // Optionally try to connect first? For now, just stop local playback.
+        if (feederIdToStop == null) {
+            Log.w(TAG, "Попытка остановить стрим, но ID текущей кормушки не известен.");
+            // Просто останавливаем локальное воспроизведение на всякий случай
             stopStreamPlayback();
             hideStreamUI();
             return;
         }
 
-        if (TextUtils.isEmpty(feederId)) {
-            Toast.makeText(this, "Введите ID кормушки для остановки", Toast.LENGTH_SHORT).show();
-            // Just stop local playback if feeder ID is missing?
-            stopStreamPlayback();
+        if (!connectionManager.isConnected()) {
+            Toast.makeText(this, "Нет подключения для остановки стрима", Toast.LENGTH_SHORT).show();
+            stopStreamPlayback(); // Остановить локально
             hideStreamUI();
             return;
         }
 
         progressBar.setVisibility(View.VISIBLE);
-        Log.d(TAG, "Запрос на остановку стрима для: " + feederId);
+        Log.d(TAG, "Запрос на остановку стрима для: " + feederIdToStop);
 
-        connectionManager.stopStream(feederId, new ConnectionManager.SimpleCallback() {
+        connectionManager.stopStream(feederIdToStop, new ConnectionManager.SimpleCallback() {
             @Override
             public void onSuccess() {
                 runOnUiThread(() -> {
@@ -530,6 +680,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
                     stopStreamPlayback(); // Stop local playback on success
                     hideStreamUI();
                     Toast.makeText(MainActivity.this, "Трансляция остановлена сервером", Toast.LENGTH_SHORT).show();
+                    currentStreamingFeederId = null; // Сбрасываем ID текущего стрима
                 });
             }
 
@@ -539,45 +690,35 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
                     progressBar.setVisibility(View.GONE);
                     Log.e(TAG, "Ошибка остановки стрима: " + message);
                     Toast.makeText(MainActivity.this, "Ошибка остановки стрима: " + message, Toast.LENGTH_LONG).show();
-                    // Still stop local playback even if server fails to confirm
+                    // Все равно останавливаем локально и скрываем UI
                     stopStreamPlayback();
                     hideStreamUI();
+                    currentStreamingFeederId = null; // Сбрасываем ID текущего стрима
                 });
             }
         });
     }
 
-    // Helper to stop local stream playback
+    // ... (stopStreamPlayback, showStreamUI, hideStreamUI как были) ...
     private void stopStreamPlayback() {
         if (streamPlayer != null) {
             streamPlayer.stop();
             streamPlayer.clearMediaItems();
         }
     }
-
-    // Helper to show stream UI elements
     private void showStreamUI() {
         tvStreamTitle.setVisibility(View.VISIBLE);
         streamPlayerView.setVisibility(View.VISIBLE);
         btnStopStream.setVisibility(View.VISIBLE);
     }
-
-    // Helper to hide stream UI elements
     private void hideStreamUI() {
         tvStreamTitle.setVisibility(View.GONE);
         streamPlayerView.setVisibility(View.GONE);
         btnStopStream.setVisibility(View.GONE);
+        currentStreamingFeederId = null; // Сбрасываем ID при скрытии UI
     }
 
-    // --- Removed getClientIdFromServer, connectToSocketServer, disconnectFromSocketServer ---
-    // --- Removed onConnect, onDisconnect, onConnectError, onAssignId listeners ---
-    // --- Removed connectAndStopStream ---
-
-
-    /**
-     * Обработчик нажатия на элемент видео
-     * @param videoItem Выбранное видео
-     */
+    // ... (onVideoClick, onStop, onDestroy как были) ...
     @Override
     public void onVideoClick(VideoItem videoItem) {
         playerView.setVisibility(View.VISIBLE);
@@ -591,11 +732,25 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
                 player.stop(); // Stop previous playback if any
                 player.clearMediaItems();
             } else {
-                // Reinitialize player if needed
                 player = new ExoPlayer.Builder(this).build();
                 playerView.setPlayer(player);
-                // Re-add listener
-                // player.addListener(...);
+                player.addListener(new Player.Listener() { // Re-add listener if player re-created
+                    @Override
+                    public void onPlaybackStateChanged(int playbackState) {
+                        Log.d(TAG, "Record Player state changed: " + playbackState);
+                        if(playbackState == Player.STATE_ENDED) {
+                            playerView.setVisibility(View.GONE);
+                            tvRecordedVideoTitle.setVisibility(View.GONE);
+                        }
+                    }
+                    @Override
+                    public void onPlayerError(@NonNull PlaybackException error) {
+                        Log.e(TAG, "Ошибка воспроизведения записи: " + error.getMessage());
+                        Toast.makeText(MainActivity.this, "Ошибка воспроизведения записи", Toast.LENGTH_SHORT).show();
+                        playerView.setVisibility(View.GONE);
+                        tvRecordedVideoTitle.setVisibility(View.GONE);
+                    }
+                });
             }
 
             player.setMediaItem(mediaItem);
@@ -612,7 +767,6 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     @Override
     protected void onStop() {
         super.onStop();
-        // Pause players when activity is not visible
         if (player != null) {
             player.pause();
         }
@@ -621,12 +775,9 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         }
     }
 
-
     @Override
     protected void onDestroy() {
         super.onDestroy();
-
-        // Release players
         if (player != null) {
             player.release();
             player = null;
@@ -635,11 +786,6 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
             streamPlayer.release();
             streamPlayer = null;
         }
-
-        // Disconnect socket via ConnectionManager ONLY if app is fully closing
-        // If just activity destruction, manager might keep connection alive.
-        // For simplicity now, let's not disconnect here, let manager handle lifecycle if needed.
-        // connectionManager.disconnect(); // Decide if disconnect is needed here
         Log.d(TAG,"onDestroy MainActivity");
     }
 }
