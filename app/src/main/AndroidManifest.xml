@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <!-- Разрешение на использование интернета -->
+    <!-- Добавьте разрешение на интернет, если его еще нет -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Добавьте разрешение на чтение/запись, если видео сохраняются локально -->
+    <!-- <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" /> -->
+    <!-- <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" /> -->
+
 
     <application
         android:allowBackup="true"
@@ -15,18 +19,35 @@
         android:theme="@style/Theme.SmartFeederZatichkaV20"
         android:usesCleartextTraffic="true"
         tools:targetApi="31">
-        <activity
-            android:name=".FullscreenVideoActivity"
-            android:exported="false" />
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
+        <!-- Разрешить незашифрованный HTTP трафик (для ExoPlayer/Retrofit к локальному серверу) -->
 
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
+    <activity
+        android:name=".MainActivity"
+        android:exported="true"
+        android:windowSoftInputMode="adjustResize"> <!-- Helps prevent keyboard issues -->
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+    </activity>
+
+    <activity
+        android:name=".FullscreenVideoActivity"
+        android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
+        android:exported="false"
+        android:theme="@style/Theme.AppCompat.NoActionBar" /> <!-- Полноэкранная тема -->
+
+    <!-- Добавленная активность Настроек -->
+    <activity
+        android:name=".SettingsActivity"
+        android:exported="false"
+        android:label="Настройки подключения"
+        android:parentActivityName=".MainActivity"> <!-- Добавляет кнопку "Назад" в ActionBar -->
+        <meta-data
+            android:name="android.support.PARENT_ACTIVITY"
+            android:value=".MainActivity" />
+    </activity>
+
+</application>
 
 </manifest>
