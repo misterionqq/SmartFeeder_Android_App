@@ -225,14 +225,10 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
 
         playerView.setFullscreenButtonClickListener(isFullscreen -> {
             if (isFullscreen) {
-                // Пользователь нажал кнопку "войти в полноэкранный режим"
                 openFullscreenActivity(player); // Передаем текущий плеер для получения данных
             }
-            // Кнопка выхода из полноэкранного режима в MainActivity не нужна,
-            // так как выход будет через onBackPressed в FullscreenVideoActivity
         });
 
-// То же самое для streamPlayerView, если для стрима тоже нужен fullscreen
         streamPlayerView.setFullscreenButtonClickListener(isFullscreen -> {
             if (isFullscreen) {
                 openFullscreenActivity(streamPlayer); // Передаем плеер стрима
