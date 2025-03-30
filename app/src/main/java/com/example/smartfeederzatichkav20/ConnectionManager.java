@@ -31,11 +31,7 @@ public class ConnectionManager {
 
     private final MutableLiveData<ConnectionState> connectionState = new MutableLiveData<>(ConnectionState.DISCONNECTED);
     private final MutableLiveData<String> clientIdLiveData = new MutableLiveData<>(null);
-
-    // Убираем pending переменные
-    // private String pendingServerAddress = null;
-    // private String pendingClientId = null;
-    // private ConnectionCallback pendingCallback = null;
+    private final MutableLiveData<String> forceStoppedFeederId = new MutableLiveData<>(null);
 
     public enum ConnectionState {
         DISCONNECTED,
@@ -83,6 +79,14 @@ public class ConnectionManager {
     }
     public LiveData<String> getClientIdLiveData() {
         return clientIdLiveData;
+    }
+
+    public LiveData<String> getForceStoppedFeederId() {
+        return forceStoppedFeederId;
+    }
+
+    public void clearForceStopEvent() {
+        mainHandler.post(() -> forceStoppedFeederId.setValue(null));
     }
 
     private void updateState(ConnectionState state) {
@@ -303,11 +307,30 @@ public class ConnectionManager {
                 Log.d(TAG, "Получено событие CONNECT_ERROR для неактуального сокета: " + currentSocket.id());
             }
         }));
+
+        currentSocket.on("stream stopped", args -> mainHandler.post(() -> {
+            if (currentSocket != ConnectionManager.this.socket) {
+                Log.w(TAG, "Получено событие 'stream stopped' для неактуального сокета: " + currentSocket.id());
+                return;
+            }
+            Log.d(TAG, "Получено событие 'stream stopped' от сервера. Args: " + Arrays.toString(args));
+            if (args.length > 0 && args[0] instanceof JSONObject) {
+                JSONObject data = (JSONObject) args[0];
+                String stoppedFeederId = data.optString("feeder_id", null);
+                if (stoppedFeederId != null) {
+                    Log.i(TAG, "Сервер сообщил об остановке стрима для кормушки: " + stoppedFeederId);
+                    // Уведомляем UI через LiveData
+                    forceStoppedFeederId.setValue(stoppedFeederId);
+                } else {
+                    Log.w(TAG, "В событии 'stream stopped' отсутствует feeder_id");
+                }
+            } else {
+                Log.w(TAG, "Некорректный формат данных в событии 'stream stopped'");
+            }
+        }));
+
+
     }
-
-    // disconnect, requestStream, stopStream, parseClientId, cleanupListeners - остаются как были в предыдущем ответе
-
-    // ... остальной код ConnectionManager (disconnect, requestStream, stopStream, parseClientId, cleanupListeners) ...
     public void disconnect() {
         Log.d(TAG, "Вызван метод disconnect()");
 

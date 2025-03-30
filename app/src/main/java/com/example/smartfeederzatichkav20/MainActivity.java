@@ -32,6 +32,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.lifecycle.Observer;
 
 import com.google.android.material.textfield.TextInputEditText;
 
@@ -205,6 +206,26 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
                 if (apiService != null) {
                     loadFeederList();
                 }
+            }
+        });
+
+
+        // Observe Force Stream Stop
+        connectionManager.getForceStoppedFeederId().observe(this, stoppedFeederId -> {
+            if (stoppedFeederId != null) {
+                Log.d(TAG, "Получено событие принудительной остановки для feederId: " + stoppedFeederId);
+                // Проверяем, совпадает ли с текущим стримом
+                if (stoppedFeederId.equals(currentStreamingFeederId)) {
+                    Log.i(TAG, "Принудительно останавливаем текущий стрим по сигналу сервера.");
+                    Toast.makeText(MainActivity.this, "Стрим остановлен сервером", Toast.LENGTH_SHORT).show();
+                    stopStreamPlayback();
+                    hideStreamUI(); // Скроет UI и сбросит currentStreamingFeederId
+                    connectionManager.disconnect();
+                } else {
+                    Log.d(TAG, "Событие остановки для " + stoppedFeederId + " не совпадает с текущим стримом (" + currentStreamingFeederId + "), игнорируем.");
+                }
+                // Сбрасываем событие в менеджере, чтобы не реагировать повторно
+                connectionManager.clearForceStopEvent();
             }
         });
 
@@ -648,24 +669,26 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     }
 
 
-    // --- ИЗМЕНЕНО: stopStream ---
     private void stopStream() {
-        // ID берем из сохраненного состояния, а не из списка,
-        // чтобы остановить именно тот стрим, который идет
         String feederIdToStop = currentStreamingFeederId;
 
         if (feederIdToStop == null) {
             Log.w(TAG, "Попытка остановить стрим, но ID текущей кормушки не известен.");
-            // Просто останавливаем локальное воспроизведение на всякий случай
             stopStreamPlayback();
             hideStreamUI();
+            if (connectionManager.isConnected()) {
+                Log.d(TAG,"Отключаемся от сервера после нажатия Стоп (ID стрима неизвестен)");
+                connectionManager.disconnect();
+            }
             return;
         }
 
+        // Проверяем подключение ДО отправки команды серверу
         if (!connectionManager.isConnected()) {
             Toast.makeText(this, "Нет подключения для остановки стрима", Toast.LENGTH_SHORT).show();
-            stopStreamPlayback(); // Остановить локально
+            stopStreamPlayback();
             hideStreamUI();
+            // Не можем отправить команду, но раз пользователь нажал стоп, видимо, и не надо
             return;
         }
 
@@ -677,11 +700,15 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
             public void onSuccess() {
                 runOnUiThread(() -> {
                     progressBar.setVisibility(View.GONE);
-                    stopStreamPlayback(); // Stop local playback on success
+                    stopStreamPlayback();
                     hideStreamUI();
-                    Toast.makeText(MainActivity.this, "Трансляция остановлена сервером", Toast.LENGTH_SHORT).show();
-                    currentStreamingFeederId = null; // Сбрасываем ID текущего стрима
-                    connectionManager.disconnect(); // Отключаемся от сокета
+                    Toast.makeText(MainActivity.this, "Трансляция остановлена", Toast.LENGTH_SHORT).show(); // Убрали "сервером"
+                    // currentStreamingFeederId сбросится в hideStreamUI()
+
+                    // --- ДОБАВЛЕНО: Отключение от сокета после успешной остановки ---
+                    Log.d(TAG,"Отключаемся от сервера после успешной остановки стрима");
+                    connectionManager.disconnect();
+                    // -------------------------------------------------------------
                 });
             }
 
@@ -689,13 +716,16 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
             public void onError(String message) {
                 runOnUiThread(() -> {
                     progressBar.setVisibility(View.GONE);
-                    Log.e(TAG, "Ошибка остановки стрима: " + message);
+                    Log.e(TAG, "Ошибка остановки стрима сервером: " + message);
                     Toast.makeText(MainActivity.this, "Ошибка остановки стрима: " + message, Toast.LENGTH_LONG).show();
-                    // Все равно останавливаем локально и скрываем UI
                     stopStreamPlayback();
                     hideStreamUI();
-                    currentStreamingFeederId = null; // Сбрасываем ID текущего стрима
-                    connectionManager.disconnect(); // Отключаемся от сокета
+                    // currentStreamingFeederId сбросится в hideStreamUI()
+
+                    // --- ДОБАВЛЕНО: Отключение от сокета даже при ошибке остановки ---
+                    Log.d(TAG,"Отключаемся от сервера после ошибки остановки стрима (на всякий случай)");
+                    connectionManager.disconnect();
+                    // -------------------------------------------------------------
                 });
             }
         });
