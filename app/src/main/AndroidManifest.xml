@@ -1,12 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <!-- Добавьте разрешение на интернет, если его еще нет -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Добавьте разрешение на чтение/запись, если видео сохраняются локально -->
-    <!-- <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" /> -->
-    <!-- <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" /> -->
-
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="true"
@@ -19,12 +15,11 @@
         android:theme="@style/Theme.SmartFeederZatichkaV20"
         android:usesCleartextTraffic="true"
         tools:targetApi="31">
-        <!-- Разрешить незашифрованный HTTP трафик (для ExoPlayer/Retrofit к локальному серверу) -->
 
     <activity
         android:name=".MainActivity"
         android:exported="true"
-        android:windowSoftInputMode="adjustResize"> <!-- Helps prevent keyboard issues -->
+        android:windowSoftInputMode="adjustResize">
         <intent-filter>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

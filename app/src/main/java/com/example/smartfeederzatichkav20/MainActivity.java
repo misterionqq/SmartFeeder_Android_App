@@ -1,6 +1,7 @@
 // Файл: MainActivity.java
 package com.example.smartfeederzatichkav20;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
@@ -33,6 +34,19 @@ import androidx.media3.ui.PlayerView;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.lifecycle.Observer;
+import android.Manifest;
+import android.app.DownloadManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.os.Environment;
+import android.webkit.MimeTypeMap;
+import androidx.activity.result.contract.ActivityResultContracts.RequestPermission;
+import androidx.appcompat.app.AlertDialog;
+import androidx.core.content.ContextCompat;
 
 import com.google.android.material.textfield.TextInputEditText;
 
@@ -81,10 +95,9 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     private ExoPlayer player;
     private ExoPlayer streamPlayer;
     private ApiService apiService;
-    // --- Removed Socket --- private Socket socket;
     private String streamPath;
-    private String currentStreamingFeederId = null; // ID кормушки, которая сейчас стримит
-
+    private String currentStreamingFeederId = null;
+    private VideoItem pendingDownloadItem = null;
     private ExoPlayer activePlayerForFullscreen = null;
 
     // Managers
@@ -101,7 +114,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
             new ActivityResultContracts.StartActivityForResult(),
             this::handleFullscreenResult
     );
-    // Activity Result Launcher for Settings (Optional: if you need result back)
+
     private final ActivityResultLauncher<Intent> settingsLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(),
             result -> {
@@ -145,6 +158,57 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         activePlayerForFullscreen = null;
     }
 
+
+    private final ActivityResultLauncher<String> requestPermissionLauncher =
+            registerForActivityResult(new RequestPermission(), isGranted -> {
+                if (isGranted) {
+                    // Разрешение получено, начинаем скачивание, если есть ожидающий элемент
+                    if (pendingDownloadItem != null) {
+                        Log.d(TAG, "Разрешение POST_NOTIFICATIONS получено, начинаем скачивание для: " + pendingDownloadItem.getFilename());
+                        startDownload(pendingDownloadItem);
+                        pendingDownloadItem = null; // Сбрасываем ожидающий элемент
+                    } else {
+                        Log.d(TAG, "Разрешение POST_NOTIFICATIONS получено, но нет ожидающего скачивания.");
+                    }
+                } else {
+                    // Разрешение не получено, сообщаем пользователю
+                    Toast.makeText(this, "Разрешение на показ уведомлений не предоставлено. Статус скачивания не будет виден.", Toast.LENGTH_LONG).show();
+                    // Все равно пытаемся скачать, если пользователь нажал "Скачать"? Или отменяем?
+                    // Давайте попробуем скачать, но без гарантии уведомления.
+                    if (pendingDownloadItem != null) {
+                        Log.w(TAG, "Разрешение POST_NOTIFICATIONS не получено, но пытаемся скачать: " + pendingDownloadItem.getFilename());
+                        startDownload(pendingDownloadItem);
+                        pendingDownloadItem = null;
+                    }
+                }
+            });
+
+    private final BroadcastReceiver downloadCompleteReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
+            if (id != -1) {
+                // Можно проверить статус загрузки, показать сообщение и т.д.
+                // Для простоты, просто покажем Toast
+                DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+                android.database.Cursor c = dm.query(new DownloadManager.Query().setFilterById(id));
+                if (c != null && c.moveToFirst()) {
+                    int status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+                    String title = c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TITLE));
+                    c.close();
+
+                    if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                        Toast.makeText(context, "Файл '" + title + "' успешно скачан.", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(context, "Ошибка скачивания файла '" + title + "'.", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            }
+        }
+    };
+
+
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -185,6 +249,12 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
 
         // Setup ExoPlayers
         setupPlayers();
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            registerReceiver(downloadCompleteReceiver, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), RECEIVER_EXPORTED); // Use RECEIVER_EXPORTED for API 34+
+        } else {
+            registerReceiver(downloadCompleteReceiver, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)); // Deprecated method for older APIs
+        }
 
         // Setup Button Listeners
         setupButtonClickListeners();
@@ -750,39 +820,43 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         currentStreamingFeederId = null; // Сбрасываем ID при скрытии UI
     }
 
-    // ... (onVideoClick, onStop, onDestroy как были) ...
     @Override
     public void onVideoClick(VideoItem videoItem) {
+        if (videoItem == null || videoItem.getUrl() == null) {
+            Log.e(TAG, "Некорректный VideoItem в onVideoClick");
+            return;
+        }
+
+        CharSequence[] items = {"Воспроизвести", "Скачать"};
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Выберите действие для\n'" + videoItem.getFilename() + "'");
+        builder.setItems(items, (dialog, which) -> {
+            if (which == 0) { // Воспроизвести
+                startVideoPlayback(videoItem);
+            } else if (which == 1) { // Скачать
+                checkPermissionsAndDownload(videoItem);
+            }
+        });
+        builder.setNegativeButton("Отмена", null); // Кнопка отмены
+        builder.show();
+    }
+
+    private void startVideoPlayback(VideoItem videoItem) {
         playerView.setVisibility(View.VISIBLE);
-        tvRecordedVideoTitle.setVisibility(View.VISIBLE); // Show title for player
+        tvRecordedVideoTitle.setVisibility(View.VISIBLE);
 
         try {
             Uri videoUri = Uri.parse(videoItem.getUrl());
             MediaItem mediaItem = MediaItem.fromUri(videoUri);
 
             if (player != null) {
-                player.stop(); // Stop previous playback if any
+                player.stop();
                 player.clearMediaItems();
             } else {
                 player = new ExoPlayer.Builder(this).build();
                 playerView.setPlayer(player);
-                player.addListener(new Player.Listener() { // Re-add listener if player re-created
-                    @Override
-                    public void onPlaybackStateChanged(int playbackState) {
-                        Log.d(TAG, "Record Player state changed: " + playbackState);
-                        if(playbackState == Player.STATE_ENDED) {
-                            playerView.setVisibility(View.GONE);
-                            tvRecordedVideoTitle.setVisibility(View.GONE);
-                        }
-                    }
-                    @Override
-                    public void onPlayerError(@NonNull PlaybackException error) {
-                        Log.e(TAG, "Ошибка воспроизведения записи: " + error.getMessage());
-                        Toast.makeText(MainActivity.this, "Ошибка воспроизведения записи", Toast.LENGTH_SHORT).show();
-                        playerView.setVisibility(View.GONE);
-                        tvRecordedVideoTitle.setVisibility(View.GONE);
-                    }
-                });
+                player.addListener(createPlayerListener()); // Используем хелпер для слушателя
             }
 
             player.setMediaItem(mediaItem);
@@ -794,6 +868,125 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
             playerView.setVisibility(View.GONE);
             tvRecordedVideoTitle.setVisibility(View.GONE);
         }
+    }
+
+    private Player.Listener createPlayerListener() {
+        return new Player.Listener() {
+            @Override
+            public void onPlaybackStateChanged(int playbackState) {
+                Log.d(TAG, "Record Player state changed: " + playbackState);
+                if(playbackState == Player.STATE_ENDED) {
+                    playerView.setVisibility(View.GONE);
+                    tvRecordedVideoTitle.setVisibility(View.GONE);
+                }
+            }
+            @Override
+            public void onPlayerError(@NonNull PlaybackException error) {
+                Log.e(TAG, "Ошибка воспроизведения записи: " + error.getMessage());
+                Toast.makeText(MainActivity.this, "Ошибка воспроизведения записи", Toast.LENGTH_SHORT).show();
+                playerView.setVisibility(View.GONE);
+                tvRecordedVideoTitle.setVisibility(View.GONE);
+            }
+        };
+    }
+
+    private void checkPermissionsAndDownload(VideoItem videoItem) {
+        pendingDownloadItem = videoItem; // Сохраняем на случай запроса разрешения
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 13+
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+                    PackageManager.PERMISSION_GRANTED) {
+                // Разрешение уже есть
+                Log.d(TAG, "Разрешение POST_NOTIFICATIONS уже есть.");
+                startDownload(pendingDownloadItem);
+                pendingDownloadItem = null; // Сбрасываем
+            } else if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+                // Показать объяснение, зачем нужно разрешение (если пользователь уже отказал)
+                new AlertDialog.Builder(this)
+                        .setTitle("Нужно разрешение")
+                        .setMessage("Для отображения статуса скачивания в уведомлениях требуется разрешение.")
+                        .setPositiveButton("OK", (dialog, which) -> requestNotificationPermission())
+                        .setNegativeButton("Отмена", (dialog, which) -> {
+                            Toast.makeText(this, "Скачивание будет выполнено без уведомлений.", Toast.LENGTH_SHORT).show();
+                            startDownload(pendingDownloadItem); // Все равно качаем
+                            pendingDownloadItem = null;
+                        })
+                        .show();
+            } else {
+                // Запрашиваем разрешение
+                requestNotificationPermission();
+            }
+        } else {
+            // Для версий ниже Android 13 разрешение не требуется для DownloadManager
+            Log.d(TAG, "Версия Android ниже 13, разрешение POST_NOTIFICATIONS не требуется.");
+            startDownload(pendingDownloadItem);
+            pendingDownloadItem = null;
+        }
+    }
+    // ----------------------------------------------------------
+
+    // --- ДОБАВЛЕНО: Запрос разрешения на уведомления ---
+    private void requestNotificationPermission() {
+        Log.d(TAG, "Запрос разрешения POST_NOTIFICATIONS...");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
+        }
+    }
+    // ---------------------------------------------------
+
+    // --- ДОБАВЛЕНО: Метод для старта скачивания ---
+    private void startDownload(VideoItem videoItem) {
+        if (videoItem == null || videoItem.getUrl() == null || videoItem.getFilename() == null) {
+            Log.e(TAG, "Невозможно начать скачивание: неверные данные VideoItem.");
+            Toast.makeText(this, "Ошибка данных видео для скачивания", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String url = videoItem.getUrl();
+        String filename = videoItem.getFilename();
+        // Простая очистка имени файла (можно улучшить)
+        filename = filename.replaceAll("[\\\\/:*?\"<>|]", "_");
+
+        try {
+            DownloadManager downloadManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+            Uri downloadUri = Uri.parse(url);
+
+            DownloadManager.Request request = new DownloadManager.Request(downloadUri);
+
+            // Определение MIME типа
+            String mimeType = getMimeType(url);
+            if (mimeType != null) {
+                request.setMimeType(mimeType);
+            } else {
+                request.setMimeType("video/*"); // Общий тип, если не удалось определить
+            }
+
+
+            request.setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI | DownloadManager.Request.NETWORK_MOBILE)
+                    .setTitle(filename) // Имя файла в уведомлении
+                    .setDescription("Скачивание видео...") // Описание в уведомлении
+                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED) // Показывать уведомление
+                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename); // Сохранить в папку Downloads
+
+            long downloadId = downloadManager.enqueue(request); // Запускаем скачивание
+
+            Log.i(TAG, "Начало скачивания файла: " + filename + " (ID: " + downloadId + ") с URL: " + url);
+            Toast.makeText(this, "Начало скачивания: " + filename, Toast.LENGTH_SHORT).show();
+
+        } catch (Exception e) {
+            Log.e(TAG, "Ошибка при старте скачивания файла " + filename, e);
+            Toast.makeText(this, "Не удалось начать скачивание", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private String getMimeType(String url) {
+        String type = null;
+        String extension = MimeTypeMap.getFileExtensionFromUrl(url);
+        if (extension != null) {
+            type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.toLowerCase());
+        }
+        Log.d(TAG, "Определен MIME тип для " + url + ": " + type);
+        return type;
     }
 
     @Override
@@ -809,6 +1002,12 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
 
     @Override
     protected void onDestroy() {
+        try {
+            unregisterReceiver(downloadCompleteReceiver);
+        } catch (IllegalArgumentException e) {
+            Log.w(TAG,"Приемник downloadCompleteReceiver не был зарегистрирован или уже отменен.");
+        }
+
         super.onDestroy();
         if (player != null) {
             player.release();
