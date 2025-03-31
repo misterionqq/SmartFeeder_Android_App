@@ -1,9 +1,11 @@
+// Файл: VideoAdapter.java
 package com.example.smartfeederzatichkav20;
 
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
+import android.widget.ImageButton; // Импортируем ImageButton
+import android.widget.TextView;    // Импортируем TextView
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
@@ -11,28 +13,28 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Адаптер для отображения списка видео в RecyclerView
- */
 public class VideoAdapter extends RecyclerView.Adapter<VideoAdapter.VideoViewHolder> {
 
     private List<VideoItem> videoList = new ArrayList<>();
-    private OnVideoClickListener listener;
+    // --- ИЗМЕНЕНО: Новый интерфейс для разных действий ---
+    private OnVideoActionListener actionListener;
 
     /**
-     * Интерфейс для обработки нажатий на элементы списка
+     * Интерфейс для обработки нажатий на элементы списка и кнопки
      */
-    public interface OnVideoClickListener {
-        void onVideoClick(VideoItem videoItem);
+    public interface OnVideoActionListener {
+        void onVideoPlayClick(VideoItem videoItem);    // Нажатие на название для воспроизведения
+        void onVideoDownloadClick(VideoItem videoItem); // Нажатие на кнопку скачивания
     }
 
     /**
-     * Устанавливает слушатель нажатий
-     * @param listener Слушатель нажатий
+     * Устанавливает слушатель действий
+     * @param listener Слушатель действий
      */
-    public void setOnVideoClickListener(OnVideoClickListener listener) {
-        this.listener = listener;
+    public void setOnVideoActionListener(OnVideoActionListener listener) {
+        this.actionListener = listener;
     }
+    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
     /**
      * Обновляет список видео
@@ -54,7 +56,7 @@ public class VideoAdapter extends RecyclerView.Adapter<VideoAdapter.VideoViewHol
     @Override
     public void onBindViewHolder(@NonNull VideoViewHolder holder, int position) {
         VideoItem videoItem = videoList.get(position);
-        holder.bind(videoItem);
+        holder.bind(videoItem, actionListener); // Передаем слушатель в bind
     }
 
     @Override
@@ -62,21 +64,41 @@ public class VideoAdapter extends RecyclerView.Adapter<VideoAdapter.VideoViewHol
         return videoList.size();
     }
 
-    class VideoViewHolder extends RecyclerView.ViewHolder {
-        private Button videoButton;
+    static class VideoViewHolder extends RecyclerView.ViewHolder {
+        private final TextView videoNameTextView;     // Текстовое поле для названия
+        private final ImageButton downloadButton;     // Кнопка скачивания
 
         VideoViewHolder(@NonNull View itemView) {
             super(itemView);
-            videoButton = itemView.findViewById(R.id.btnVideo);
+            videoNameTextView = itemView.findViewById(R.id.tvVideoName);
+            downloadButton = itemView.findViewById(R.id.btnDownloadVideo);
         }
 
-        void bind(final VideoItem videoItem) {
-            videoButton.setText(videoItem.getFilename());
-            videoButton.setOnClickListener(v -> {
+        void bind(final VideoItem videoItem, final OnVideoActionListener listener) {
+            videoNameTextView.setText(videoItem.getFilename());
+
+            /*
+            videoNameTextView.setOnClickListener(v -> {
                 if (listener != null) {
-                    listener.onVideoClick(videoItem);
+                    listener.onVideoPlayClick(videoItem);
+                }
+            });*/
+
+            // Также можно сделать всю строку кликабельной для воспроизведения
+             itemView.setOnClickListener(v -> {
+                 if (listener != null) {
+                     listener.onVideoPlayClick(videoItem);
+                 }
+             });
+
+
+
+            // Слушатель для кнопки скачивания
+            downloadButton.setOnClickListener(v -> {
+                if (listener != null) {
+                    listener.onVideoDownloadClick(videoItem);
                 }
             });
         }
     }
-} 
+}

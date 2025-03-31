@@ -69,7 +69,7 @@ import retrofit2.Response;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 
-public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVideoClickListener {
+public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVideoActionListener {
 
     private static final String TAG = "MainActivity";
     private static final String DEFAULT_FEEDER_ID = "750cec99-5311-4055-8da0-2aad1e531d6c"; // Keep default feeder ID
@@ -171,12 +171,8 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
                         Log.d(TAG, "Разрешение POST_NOTIFICATIONS получено, но нет ожидающего скачивания.");
                     }
                 } else {
-                    // Разрешение не получено, сообщаем пользователю
-                    Toast.makeText(this, "Разрешение на показ уведомлений не предоставлено. Статус скачивания не будет виден.", Toast.LENGTH_LONG).show();
-                    // Все равно пытаемся скачать, если пользователь нажал "Скачать"? Или отменяем?
-                    // Давайте попробуем скачать, но без гарантии уведомления.
                     if (pendingDownloadItem != null) {
-                        Log.w(TAG, "Разрешение POST_NOTIFICATIONS не получено, но пытаемся скачать: " + pendingDownloadItem.getFilename());
+                        Log.w(TAG, "Разрешение POST_NOTIFICATIONS не получено: " + pendingDownloadItem.getFilename());
                         startDownload(pendingDownloadItem);
                         pendingDownloadItem = null;
                     }
@@ -188,8 +184,6 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         public void onReceive(Context context, Intent intent) {
             long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
             if (id != -1) {
-                // Можно проверить статус загрузки, показать сообщение и т.д.
-                // Для простоты, просто покажем Toast
                 DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
                 android.database.Cursor c = dm.query(new DownloadManager.Query().setFilterById(id));
                 if (c != null && c.moveToFirst()) {
@@ -312,6 +306,16 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         }
     }
 
+    private void setupRecyclerView() {
+        videoAdapter = new VideoAdapter();
+        videoAdapter.setOnVideoActionListener(this);
+        LinearLayoutManager layoutManager = new LinearLayoutManager(this);
+        layoutManager.setInitialPrefetchItemCount(4);
+        rvVideoList.setLayoutManager(layoutManager);
+        rvVideoList.setNestedScrollingEnabled(false);
+        rvVideoList.setAdapter(videoAdapter);
+    }
+
     private void initializeApiService() {
         String serverAddress = settingsManager.getServerAddress();
         if (!TextUtils.isEmpty(serverAddress)) {
@@ -347,17 +351,6 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
 
         // Опционально: Загрузить и установить ранее выбранную кормушку
         // loadAndSetLastFeeder();
-    }
-
-    // ... (setupRecyclerView, setupPlayers как были) ...
-    private void setupRecyclerView() {
-        videoAdapter = new VideoAdapter();
-        videoAdapter.setOnVideoClickListener(this);
-        LinearLayoutManager layoutManager = new LinearLayoutManager(this);
-        layoutManager.setInitialPrefetchItemCount(4);
-        rvVideoList.setLayoutManager(layoutManager);
-        rvVideoList.setNestedScrollingEnabled(false);
-        rvVideoList.setAdapter(videoAdapter);
     }
 
     private void setupPlayers() {
@@ -820,6 +813,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         currentStreamingFeederId = null; // Сбрасываем ID при скрытии UI
     }
 
+    /*
     @Override
     public void onVideoClick(VideoItem videoItem) {
         if (videoItem == null || videoItem.getUrl() == null) {
@@ -840,6 +834,28 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         });
         builder.setNegativeButton("Отмена", null); // Кнопка отмены
         builder.show();
+    }
+
+     */
+
+    @Override
+    public void onVideoPlayClick(VideoItem videoItem) {
+        if (videoItem == null || videoItem.getUrl() == null) {
+            Log.e(TAG, "Некорректный VideoItem в onVideoPlayClick");
+            return;
+        }
+        Log.d(TAG, "Запрос воспроизведения для: " + videoItem.getFilename());
+        startVideoPlayback(videoItem); // Вызываем метод воспроизведения
+    }
+
+    @Override
+    public void onVideoDownloadClick(VideoItem videoItem) {
+        if (videoItem == null || videoItem.getUrl() == null) {
+            Log.e(TAG, "Некорректный VideoItem в onVideoDownloadClick");
+            return;
+        }
+        Log.d(TAG, "Запрос скачивания для: " + videoItem.getFilename());
+        checkPermissionsAndDownload(videoItem); // Вызываем метод скачивания
     }
 
     private void startVideoPlayback(VideoItem videoItem) {
