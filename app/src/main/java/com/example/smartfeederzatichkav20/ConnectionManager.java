@@ -213,19 +213,18 @@ public class ConnectionManager {
     }
 
 
-    // --- ИЗМЕНЕННЫЙ connectWithId ---
     public void connectWithId(String serverAddress, String clientId, ConnectionCallback callback) {
+        updateClientId(clientId);
+
         updateState(ConnectionState.CONNECTING_WITH_ID);
         mainHandler.post(() -> Toast.makeText(appContext, "Подключение с ID: " + clientId, Toast.LENGTH_SHORT).show());
 
-        // --- Отключаем и очищаем ЛЮБОЙ предыдущий сокет ---
-        final Socket oldSocket = socket; // Захватываем текущую ссылку (может быть временный сокет)
+        final Socket oldSocket = socket;
         if (oldSocket != null) {
             Log.d(TAG, "connectWithId: Отключаем предыдущий сокет (ID: " + (oldSocket.id() != null ? oldSocket.id() : "null") + ")");
             oldSocket.disconnect();
             cleanupListeners(oldSocket);
         }
-        // ----------------------------------------------------
 
         try {
             IO.Options options = new IO.Options();
@@ -235,27 +234,24 @@ public class ConnectionManager {
             options.auth = auth;
 
             Log.d(TAG,"Создание НОВОГО сокета для ПОДКЛЮЧЕНИЯ С ID к " + serverAddress);
-            // Создаем и ПРИСВАИВАЕМ новый сокет глобальной переменной
             Socket newSocket = IO.socket("http://" + serverAddress, options);
-            this.socket = newSocket; // <--- Обновляем глобальную ссылку
+            this.socket = newSocket;
 
-            // Добавляем основные рабочие слушатели к НОВОМУ сокету
             addCoreListeners(callback);
             newSocket.connect();
 
         } catch (URISyntaxException e) {
             updateState(ConnectionState.ERROR);
+            updateClientId(null);
             mainHandler.post(() -> Toast.makeText(appContext, "Ошибка URI: " + e.getMessage(), Toast.LENGTH_SHORT).show());
             Log.e(TAG, "Ошибка создания сокета (Connect with ID)", e);
             if (callback != null) callback.onError("Ошибка URI: " + e.getMessage());
-            socket = null; // Убедимся, что сокет null при ошибке
+            socket = null;
         }
     }
-    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
 
     private void addCoreListeners(ConnectionCallback callback) {
-        // Этот метод теперь всегда вызывается для НОВОГО сокета в connectWithId
         final Socket currentSocket = socket; // Захватываем ссылку на текущий "основной" сокет
         if (currentSocket == null) {
             Log.e(TAG, "addCoreListeners вызван с null сокетом!");
@@ -265,7 +261,6 @@ public class ConnectionManager {
         Log.d(TAG, "Добавление основных слушателей к сокету: " + currentSocket.id());
 
         currentSocket.on(Socket.EVENT_CONNECT, args -> mainHandler.post(() -> {
-            // Убедимся, что событие пришло для текущего активного сокета
             if (currentSocket == ConnectionManager.this.socket && connectionState.getValue() == ConnectionState.CONNECTING_WITH_ID) {
                 updateState(ConnectionState.CONNECTED);
                 Log.d(TAG, "Подключено к Socket.IO серверу (Core, сокет: " + currentSocket.id() + ")");
@@ -276,7 +271,6 @@ public class ConnectionManager {
         }));
 
         currentSocket.on(Socket.EVENT_DISCONNECT, args -> mainHandler.post(() -> {
-            // Убедимся, что событие пришло для текущего активного сокета
             if (currentSocket == ConnectionManager.this.socket) {
                 String reason = args.length > 0 ? args[0].toString() : "нет данных";
                 Log.d(TAG, "Отключено от Socket.IO сервера (Core, сокет: " + currentSocket.id() + "). Причина: " + reason);
@@ -333,22 +327,21 @@ public class ConnectionManager {
     }
     public void disconnect() {
         Log.d(TAG, "Вызван метод disconnect()");
-
-        final Socket oldSocket = socket; // Захватываем текущую ссылку
+        final Socket oldSocket = socket;
         if (oldSocket != null) {
             if (oldSocket.connected()) {
                 Log.d(TAG, "Отключение сокета...");
-                oldSocket.disconnect(); // onDisconnect обработает очистку и обнуление
+                oldSocket.disconnect();
             } else {
                 Log.d(TAG, "Сокет не подключен, очистка слушателей и обнуление...");
-                cleanupListeners(oldSocket); // Clean up listeners even if not connected
-                socket = null; // Nullify the socket reference
-                updateState(ConnectionState.DISCONNECTED); // Устанавливаем статус вручную, т.к. onDisconnect не сработает
+                cleanupListeners(oldSocket);
+                socket = null;
             }
         } else {
             Log.d(TAG, "Сокет уже null.");
-            updateState(ConnectionState.DISCONNECTED); // Убедимся, что статус верный
         }
+        updateClientId(null);
+        updateState(ConnectionState.DISCONNECTED);
     }
 
 

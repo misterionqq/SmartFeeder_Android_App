@@ -28,7 +28,8 @@ public class SettingsActivity extends AppCompatActivity {
     private Button btnConnectAndSave;
     private ProgressBar progressBar;
     private TextView tvStatus;
-
+    private Button btnDisconnectSettings;
+    private Button btnGoToMain;
     private SettingsManager settingsManager;
     private ConnectionManager connectionManager;
 
@@ -50,6 +51,8 @@ public class SettingsActivity extends AppCompatActivity {
         btnConnectAndSave = findViewById(R.id.btnConnectAndSave);
         progressBar = findViewById(R.id.progressBarSettings);
         tvStatus = findViewById(R.id.tvStatusSettings);
+        btnDisconnectSettings = findViewById(R.id.btnDisconnectSettings);
+        btnGoToMain = findViewById(R.id.btnGoToMain);
 
         settingsManager = SettingsManager.getInstance(this);
         // Pass application context to avoid leaks
@@ -59,7 +62,15 @@ public class SettingsActivity extends AppCompatActivity {
         updateStatus(); // Initial status update
 
         btnConnectAndSave.setOnClickListener(v -> connectAndSave());
+        btnGoToMain.setOnClickListener(v -> finish());
 
+        btnDisconnectSettings.setOnClickListener(v -> {
+            Log.d("SettingsActivity", "Нажата кнопка Отключиться");
+            connectionManager.disconnect();
+            settingsManager.saveClientId(null); // Очищаем сохраненный ID
+            etClientId.setText(""); // Очищаем поле
+            Toast.makeText(this, "Отключено", Toast.LENGTH_SHORT).show();
+        });
         // Observe connection state changes from the ConnectionManager
         connectionManager.getConnectionState().observe(this, state -> updateStatus());
         connectionManager.getClientIdLiveData().observe(this, clientId -> {
@@ -67,6 +78,8 @@ public class SettingsActivity extends AppCompatActivity {
                 etClientId.setText(clientId);
                 // Save automatically when ID is assigned during the connection process
                 settingsManager.saveClientId(clientId);
+            } else {
+                etClientId.setText("");
             }
         });
     }
@@ -79,18 +92,20 @@ public class SettingsActivity extends AppCompatActivity {
     private void updateStatus() {
         ConnectionManager.ConnectionState state = connectionManager.getConnectionState().getValue();
         String statusText = "Статус: ";
-        boolean inProgress = false; // Флаг для ProgressBar
+        boolean inProgress = false;
+        boolean isConnected = false;
 
         if (state != null) {
             switch (state) {
                 case CONNECTED:
                     statusText += "Подключено";
+                    isConnected = true;
                     break;
-                case CONNECTING_FOR_ID: // Новое состояние
+                case CONNECTING_FOR_ID:
                     statusText += "Получение ID...";
                     inProgress = true;
                     break;
-                case CONNECTING_WITH_ID: // Новое состояние
+                case CONNECTING_WITH_ID:
                     statusText += "Подключение с ID...";
                     inProgress = true;
                     break;
@@ -109,6 +124,11 @@ public class SettingsActivity extends AppCompatActivity {
         }
         tvStatus.setText(statusText);
         progressBar.setVisibility(inProgress ? View.VISIBLE : View.GONE);
+
+
+        btnDisconnectSettings.setEnabled(isConnected);
+
+        btnConnectAndSave.setEnabled(!isConnected && !inProgress);
     }
 
 
@@ -120,44 +140,31 @@ public class SettingsActivity extends AppCompatActivity {
             return;
         }
 
-        // Менеджер сам обработает отключение предыдущего сокета, если нужно
-        // connectionManager.disconnect(); // Убрали явный disconnect отсюда
-
-        // progressBar и tvStatus обновятся через LiveData при смене состояния в ConnectionManager
+        settingsManager.saveServerAddress(serverAddress);
+        Log.d("SettingsActivity", "Адрес сервера сохранен: " + serverAddress);
 
         connectionManager.getClientIdFromServer(serverAddress, new ConnectionManager.ConnectionCallback() {
             @Override
             public void onSuccess(String clientId) {
-                // Этот метод вызывается СРАЗУ после получения ID, ДО финального подключения
                 runOnUiThread(() -> {
-                    Log.d(TAG, "ID получен: " + clientId + ", сохраняем адрес сервера.");
-                    settingsManager.saveServerAddress(serverAddress); // Сохраняем адрес
-                    settingsManager.saveClientId(clientId);      // Сохраняем ID
-                    etClientId.setText(clientId);                // Обновляем поле
-                    // Статус обновится на CONNECTING_WITH_ID автоматически
+                    Log.d("SettingsActivity", "ID получен: " + clientId);
+                    settingsManager.saveClientId(clientId);
                 });
             }
 
             @Override
             public void onConnected() {
-                // Этот метод вызывается ПОСЛЕ успешного подключения С ID
                 runOnUiThread(() -> {
-                    Log.d(TAG, "Финальное подключение успешно.");
-                    Toast.makeText(SettingsActivity.this, "Подключено и сохранено!", Toast.LENGTH_SHORT).show();
-                    // Статус обновится на CONNECTED автоматически
-                    // finish(); // Можно закрыть активность при успехе
+                    Log.d("SettingsActivity", "Финальное подключение успешно.");
+                    Toast.makeText(SettingsActivity.this, "Подключено!", Toast.LENGTH_SHORT).show();
                 });
             }
 
             @Override
             public void onError(String message) {
                 runOnUiThread(() -> {
-                    Log.e(TAG, "Ошибка в процессе подключения: " + message);
-                    // Статус обновится на ERROR автоматически
+                    Log.e("SettingsActivity", "Ошибка в процессе подключения: " + message);
                     Toast.makeText(SettingsActivity.this, "Ошибка: " + message, Toast.LENGTH_LONG).show();
-                    // Очищать ли здесь сохраненные настройки? Возможно, нет.
-                    // settingsManager.clearSettings();
-                    // etClientId.setText("");
                 });
             }
         });

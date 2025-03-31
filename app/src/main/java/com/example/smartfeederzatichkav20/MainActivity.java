@@ -118,12 +118,14 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     private final ActivityResultLauncher<Intent> settingsLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(),
             result -> {
-                // Check if settings were successfully saved or connection established
-                // For now, we rely on ConnectionManager's LiveData and SettingsManager
                 Log.d(TAG, "Вернулись из Настроек, код результата: " + result.getResultCode());
-                // Re-check connection status or attempt auto-connect again if needed
                 updateConnectionStatusDisplay();
-                attemptAutoConnect(); // Try connecting if settings might have changed
+                // Пересоздаем ApiService на случай, если адрес сервера изменился
+                initializeApiService();
+                // Пытаемся загрузить список кормушек с (возможно) новым адресом
+                if (apiService != null && connectionManager.isConnected()) {
+                    loadFeederList();
+                }
             }
     );
 
