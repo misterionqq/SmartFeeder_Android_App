@@ -1,6 +1,5 @@
-package com.example.smartfeederzatichkav20;
+package com.example.smartfeederapp;
 
-import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.net.Uri;

@@ -1,4 +1,4 @@
-package com.example.smartfeederzatichkav20;
+package com.example.smartfeederapp;
 
 import org.junit.Test;
 

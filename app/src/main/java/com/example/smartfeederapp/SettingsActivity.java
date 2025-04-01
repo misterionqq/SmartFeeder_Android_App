@@ -1,4 +1,4 @@
-package com.example.smartfeederzatichkav20;
+package com.example.smartfeederapp;
 
 import android.os.Bundle;
 import android.text.TextUtils;

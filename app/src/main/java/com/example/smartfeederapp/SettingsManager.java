@@ -1,5 +1,5 @@
 // Файл: SettingsManager.java
-package com.example.smartfeederzatichkav20;
+package com.example.smartfeederapp;
 
 import android.content.Context;
 import android.content.SharedPreferences;

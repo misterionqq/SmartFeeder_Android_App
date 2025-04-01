@@ -1,4 +1,4 @@
-package com.example.smartfeederzatichkav20;
+package com.example.smartfeederapp;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
@@ -32,12 +32,11 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
-import androidx.lifecycle.Observer;
+
 import android.Manifest;
 import android.app.DownloadManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -47,8 +46,6 @@ import androidx.activity.result.contract.ActivityResultContracts.RequestPermissi
 import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.ContextCompat;
 
-import com.google.android.material.textfield.TextInputEditText;
-
 import android.widget.ArrayAdapter; // Для выпадающего списка
 import android.widget.AutoCompleteTextView; // Для выпадающего списка
 import com.google.android.material.textfield.TextInputLayout; // Для контейнера списка
@@ -56,10 +53,6 @@ import com.google.android.material.textfield.TextInputLayout; // Для конт
 import java.util.ArrayList; // Для хранения списка кормушек
 
 
-import org.json.JSONException;
-import org.json.JSONObject;
-
-import java.net.URISyntaxException;
 import java.util.List;
 
 import retrofit2.Call;

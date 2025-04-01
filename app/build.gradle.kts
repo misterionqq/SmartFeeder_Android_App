@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.smartfeederzatichkav20"
+    namespace = "com.example.smartfeederapp"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.smartfeederzatichkav20"
+        applicationId = "com.example.smartfeederapp"
         minSdk = 24
         targetSdk = 34
         versionCode = 1

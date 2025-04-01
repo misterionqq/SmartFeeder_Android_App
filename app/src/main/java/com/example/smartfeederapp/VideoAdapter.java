@@ -1,10 +1,10 @@
-package com.example.smartfeederzatichkav20;
+package com.example.smartfeederapp;
 
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageButton;
-import android.widget.TextView;
+import android.widget.TextView;    // Импортируем TextView
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
