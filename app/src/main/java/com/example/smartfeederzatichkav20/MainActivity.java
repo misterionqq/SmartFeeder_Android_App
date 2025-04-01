@@ -1,4 +1,3 @@
-// Файл: MainActivity.java
 package com.example.smartfeederzatichkav20;
 
 import android.annotation.SuppressLint;

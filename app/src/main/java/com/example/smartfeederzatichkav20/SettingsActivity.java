@@ -1,4 +1,3 @@
-// Файл: SettingsActivity.java
 package com.example.smartfeederzatichkav20;
 
 import android.os.Bundle;

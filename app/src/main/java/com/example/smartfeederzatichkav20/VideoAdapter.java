@@ -1,11 +1,10 @@
-// Файл: VideoAdapter.java
 package com.example.smartfeederzatichkav20;
 
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ImageButton; // Импортируем ImageButton
-import android.widget.TextView;    // Импортируем TextView
+import android.widget.ImageButton;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;

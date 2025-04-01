@@ -1,4 +1,3 @@
-// Файл: ConnectionManager.java
 package com.example.smartfeederzatichkav20;
 
 import android.content.Context;
