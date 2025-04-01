@@ -17,7 +17,8 @@ import androidx.media3.common.util.Util;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 
-@UnstableApi public class FullscreenVideoActivity extends AppCompatActivity {
+@UnstableApi
+public class FullscreenVideoActivity extends AppCompatActivity {
 
     private PlayerView playerView;
     private ExoPlayer player;
@@ -37,7 +38,7 @@ import androidx.media3.ui.PlayerView;
 
         playerView = findViewById(R.id.fullscreenPlayerView);
 
-        // Получаем данные из Intent
+
         if (getIntent() != null) {
             String uriString = getIntent().getStringExtra(EXTRA_VIDEO_URI);
             if (uriString != null) {
@@ -47,7 +48,7 @@ import androidx.media3.ui.PlayerView;
             startPlayWhenReady = getIntent().getBooleanExtra(EXTRA_PLAY_WHEN_READY, true);
         }
 
-        // Скрываем системные панели для полноэкранного режима
+
         hideSystemUi();
 
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
@@ -70,14 +71,15 @@ import androidx.media3.ui.PlayerView;
 
         playerView.setFullscreenButtonClickListener(isFullscreen -> {
             if (!isFullscreen) {
-                // Пользователь нажал стандартную кнопку для ВЫХОДА
+
                 finishActivityWithResult();
             }
         });
     }
+
     private void releasePlayer() {
         if (player != null) {
-            // Сохраняем текущую позицию и состояние для возможного возврата
+
             startPosition = player.getCurrentPosition();
             startPlayWhenReady = player.getPlayWhenReady();
             player.release();
@@ -118,7 +120,7 @@ import androidx.media3.ui.PlayerView;
         }
     }
 
-    // Метод для скрытия системных панелей (статус-бар, навигация)
+
     private void hideSystemUi() {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
@@ -129,16 +131,9 @@ import androidx.media3.ui.PlayerView;
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         View decorView = getWindow().getDecorView();
-        decorView.setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_FULLSCREEN);
+        decorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN);
     }
 
-    // Обработка нажатия кнопки "Назад" - просто закрываем Activity
     @Override
     public void onBackPressed() {
         finishActivityWithResult();

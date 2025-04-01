@@ -1,4 +1,3 @@
-// Файл: SettingsManager.java
 package com.example.smartfeederapp;
 
 import android.content.Context;
@@ -14,7 +13,7 @@ public class SettingsManager {
     private final SharedPreferences sharedPreferences;
 
     private SettingsManager(Context context) {
-        // Use application context to prevent memory leaks
+
         sharedPreferences = context.getApplicationContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
@@ -34,7 +33,7 @@ public class SettingsManager {
     }
 
     public String getServerAddress() {
-        return sharedPreferences.getString(KEY_SERVER_ADDRESS, null); // Return null if not set
+        return sharedPreferences.getString(KEY_SERVER_ADDRESS, null);
     }
 
     public void saveClientId(String clientId) {
@@ -42,14 +41,11 @@ public class SettingsManager {
     }
 
     public String getClientId() {
-        return sharedPreferences.getString(KEY_CLIENT_ID, null); // Return null if not set
+        return sharedPreferences.getString(KEY_CLIENT_ID, null);
     }
 
     public void clearSettings() {
-        sharedPreferences.edit()
-                .remove(KEY_SERVER_ADDRESS)
-                .remove(KEY_CLIENT_ID)
-                .apply();
+        sharedPreferences.edit().remove(KEY_SERVER_ADDRESS).remove(KEY_CLIENT_ID).apply();
     }
 
     public boolean areSettingsAvailable() {

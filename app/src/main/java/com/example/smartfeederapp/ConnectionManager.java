@@ -5,6 +5,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.widget.Toast;
+
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 
@@ -12,7 +13,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.net.URISyntaxException;
-import java.util.Arrays; // Импортируем Arrays для логирования
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -33,26 +34,27 @@ public class ConnectionManager {
     private final MutableLiveData<String> forceStoppedFeederId = new MutableLiveData<>(null);
 
     public enum ConnectionState {
-        DISCONNECTED,
-        CONNECTING_FOR_ID,
-        CONNECTING_WITH_ID,
-        CONNECTED,
-        ERROR
+        DISCONNECTED, CONNECTING_FOR_ID, CONNECTING_WITH_ID, CONNECTED, ERROR
     }
 
     public interface ConnectionCallback {
         void onSuccess(String clientId);
+
         void onConnected();
+
         void onError(String message);
     }
 
-    // ... (StreamCallback, SimpleCallback как были) ...
+
     public interface StreamCallback {
         void onSuccess(String streamPath);
+
         void onError(String message);
     }
+
     public interface SimpleCallback {
         void onSuccess();
+
         void onError(String message);
     }
 
@@ -62,7 +64,7 @@ public class ConnectionManager {
     }
 
     public static ConnectionManager getInstance(Context context) {
-        // ... (как было)
+
         if (instance == null) {
             synchronized (ConnectionManager.class) {
                 if (instance == null) {
@@ -76,6 +78,7 @@ public class ConnectionManager {
     public LiveData<ConnectionState> getConnectionState() {
         return connectionState;
     }
+
     public LiveData<String> getClientIdLiveData() {
         return clientIdLiveData;
     }
@@ -92,6 +95,7 @@ public class ConnectionManager {
         Log.d(TAG, "Updating state from " + connectionState.getValue() + " to " + state);
         mainHandler.post(() -> connectionState.setValue(state));
     }
+
     private void updateClientId(String clientId) {
         mainHandler.post(() -> clientIdLiveData.setValue(clientId));
     }
@@ -104,7 +108,6 @@ public class ConnectionManager {
         return socket != null && socket.connected() && connectionState.getValue() == ConnectionState.CONNECTED;
     }
 
-    // --- Core Connection Logic ---
 
     public void getClientIdFromServer(String serverAddress, ConnectionCallback callback) {
         updateState(ConnectionState.CONNECTING_FOR_ID);
@@ -117,84 +120,83 @@ public class ConnectionManager {
             auth.put("need id", "true");
             options.auth = auth;
 
-            // Отключаем предыдущий сокет, если он был
-            final Socket oldSocket = socket; // Захватываем ссылку на старый сокет
+
+            final Socket oldSocket = socket;
             if (oldSocket != null) {
                 Log.d(TAG, "getClientIdFromServer: Отключаем предыдущий сокет (ID: " + oldSocket.id() + ") перед запросом ID...");
-                oldSocket.disconnect(); // Начинаем отключение
-                cleanupListeners(oldSocket); // Очищаем его слушатели немедленно
+                oldSocket.disconnect();
+                cleanupListeners(oldSocket);
             }
 
-            Log.d(TAG,"Создание нового сокета для запроса ID к " + serverAddress);
-            // Создаем НОВЫЙ сокет для временного подключения
-            final Socket tempSocket = IO.socket("http://" + serverAddress, options);
-            this.socket = tempSocket; // Обновляем глобальную ссылку НА ВРЕМЯ
+            Log.d(TAG, "Создание нового сокета для запроса ID к " + serverAddress);
 
-            // --- Define listeners specific to this operation ---
+            final Socket tempSocket = IO.socket("http://" + serverAddress, options);
+            this.socket = tempSocket;
+
+
             final Emitter.Listener connectListener = args -> mainHandler.post(() -> {
                 Log.d(TAG, "Подключено к Socket.IO (для получения ID, сокет: " + tempSocket.id() + ")");
             });
 
-            // --- ИЗМЕНЕННЫЙ assignIdListener ---
+
             final Emitter.Listener assignIdListener = args -> mainHandler.post(() -> {
                 Log.d(TAG, "Получено событие 'assign id'. Аргументы: " + Arrays.toString(args) + " на сокете: " + tempSocket.id());
                 String assignedClientId = parseClientId(args);
 
-                // Очищаем ВСЕ слушатели временного сокета СРАЗУ
+
                 cleanupListeners(tempSocket);
 
                 if (assignedClientId != null) {
                     Log.d(TAG, "Успешно получен ID: " + assignedClientId + " (сокет: " + tempSocket.id() + ")");
-                    updateClientId(assignedClientId); // Update LiveData
+                    updateClientId(assignedClientId);
 
-                    // Вызываем onSuccess колбэк
+
                     if (callback != null) callback.onSuccess(assignedClientId);
 
-                    // --- СРАЗУ ЗАПУСКАЕМ ПОДКЛЮЧЕНИЕ С НОВЫМ ID ---
+
                     Log.d(TAG, "Сразу запускаем connectWithId после получения ID...");
-                    // connectWithId отключит временный сокет tempSocket и создаст новый
+
                     connectWithId(serverAddress, assignedClientId, callback);
-                    // -----------------------------------------
+
 
                 } else {
                     Log.e(TAG, "Не удалось получить ID от сервера (сокет: " + tempSocket.id() + ")");
                     updateState(ConnectionState.ERROR);
                     if (callback != null) callback.onError("Не удалось получить ID от сервера");
-                    disconnect(); // Полная очистка
+                    disconnect();
                 }
             });
-            // --- КОНЕЦ ИЗМЕНЕНИЯ ---
+
 
             final Emitter.Listener connectErrorListener = args -> mainHandler.post(() -> {
-                // Проверяем, что ошибка относится именно к этому временному сокету
+
                 if (tempSocket == ConnectionManager.this.socket) {
                     updateState(ConnectionState.ERROR);
                     String errorMsg = args.length > 0 ? args[0].toString() : "Неизвестная ошибка";
                     Log.e(TAG, "Ошибка подключения (Get ID, сокет: " + tempSocket.id() + "): " + errorMsg);
-                    cleanupListeners(tempSocket); // Очистка
+                    cleanupListeners(tempSocket);
                     if (callback != null) callback.onError("Ошибка подключения: " + errorMsg);
-                    disconnect(); // Полная очистка
+                    disconnect();
                 } else {
                     Log.w(TAG, "Получена ошибка подключения для уже неактуального сокета.");
                 }
             });
 
-            // Упрощенный disconnect listener для временного сокета
+
             final Emitter.Listener disconnectListener = args -> mainHandler.post(() -> {
-                // Проверяем, что событие относится к текущему временному сокету
+
                 if (tempSocket == ConnectionManager.this.socket && connectionState.getValue() == ConnectionState.CONNECTING_FOR_ID) {
                     Log.w(TAG, "Временный сокет (Get ID, id: " + tempSocket.id() + ") отключился до получения ID. Причина: " + (args.length > 0 ? args[0] : "нет данных"));
                     updateState(ConnectionState.ERROR);
                     if (callback != null) callback.onError("Отключено до получения ID");
                     cleanupListeners(tempSocket);
-                    socket = null; // Обнуляем ссылку
+                    socket = null;
                 } else {
                     Log.d(TAG, "Получено событие disconnect для сокета " + tempSocket.id() + ", но он уже не актуален или стадия пройдена.");
                 }
             });
-            // --- End Listeners ---
 
-            // Add listeners to the temporary socket
+
             tempSocket.on(Socket.EVENT_CONNECT, connectListener);
             tempSocket.on("assign id", assignIdListener);
             tempSocket.on(Socket.EVENT_CONNECT_ERROR, connectErrorListener);
@@ -232,7 +234,7 @@ public class ConnectionManager {
             auth.put("id", clientId);
             options.auth = auth;
 
-            Log.d(TAG,"Создание НОВОГО сокета для ПОДКЛЮЧЕНИЯ С ID к " + serverAddress);
+            Log.d(TAG, "Создание НОВОГО сокета для ПОДКЛЮЧЕНИЯ С ID к " + serverAddress);
             Socket newSocket = IO.socket("http://" + serverAddress, options);
             this.socket = newSocket;
 
@@ -251,7 +253,7 @@ public class ConnectionManager {
 
 
     private void addCoreListeners(ConnectionCallback callback) {
-        final Socket currentSocket = socket; // Захватываем ссылку на текущий "основной" сокет
+        final Socket currentSocket = socket;
         if (currentSocket == null) {
             Log.e(TAG, "addCoreListeners вызван с null сокетом!");
             return;
@@ -265,7 +267,7 @@ public class ConnectionManager {
                 Log.d(TAG, "Подключено к Socket.IO серверу (Core, сокет: " + currentSocket.id() + ")");
                 if (callback != null) callback.onConnected();
             } else {
-                Log.w(TAG,"Получено событие CONNECT для сокета " + currentSocket.id() + ", но он уже не основной или состояние не CONNECTING_WITH_ID. Текущее: " + connectionState.getValue());
+                Log.w(TAG, "Получено событие CONNECT для сокета " + currentSocket.id() + ", но он уже не основной или состояние не CONNECTING_WITH_ID. Текущее: " + connectionState.getValue());
             }
         }));
 
@@ -275,8 +277,8 @@ public class ConnectionManager {
                 Log.d(TAG, "Отключено от Socket.IO сервера (Core, сокет: " + currentSocket.id() + "). Причина: " + reason);
                 updateState(ConnectionState.DISCONNECTED);
                 cleanupListeners(currentSocket);
-                // Обнуляем ТОЛЬКО если это действительно текущий сокет
-                if(currentSocket == ConnectionManager.this.socket) {
+
+                if (currentSocket == ConnectionManager.this.socket) {
                     socket = null;
                 }
             } else {
@@ -285,15 +287,15 @@ public class ConnectionManager {
         }));
 
         currentSocket.on(Socket.EVENT_CONNECT_ERROR, args -> mainHandler.post(() -> {
-            // Убедимся, что событие пришло для текущего активного сокета
+
             if (currentSocket == ConnectionManager.this.socket) {
                 updateState(ConnectionState.ERROR);
                 String errorMsg = args.length > 0 ? args[0].toString() : "Неизвестная ошибка";
                 Log.e(TAG, "Ошибка подключения к Socket.IO серверу (Core, сокет: " + currentSocket.id() + "): " + errorMsg);
                 if (callback != null) callback.onError("Ошибка подключения: " + errorMsg);
                 cleanupListeners(currentSocket);
-                // Обнуляем ТОЛЬКО если это действительно текущий сокет
-                if(currentSocket == ConnectionManager.this.socket) {
+
+                if (currentSocket == ConnectionManager.this.socket) {
                     socket = null;
                 }
             } else {
@@ -312,7 +314,7 @@ public class ConnectionManager {
                 String stoppedFeederId = data.optString("feeder_id", null);
                 if (stoppedFeederId != null) {
                     Log.i(TAG, "Сервер сообщил об остановке стрима для кормушки: " + stoppedFeederId);
-                    // Уведомляем UI через LiveData
+
                     forceStoppedFeederId.setValue(stoppedFeederId);
                 } else {
                     Log.w(TAG, "В событии 'stream stopped' отсутствует feeder_id");
@@ -324,6 +326,7 @@ public class ConnectionManager {
 
 
     }
+
     public void disconnect() {
         Log.d(TAG, "Вызван метод disconnect()");
         final Socket oldSocket = socket;
@@ -369,11 +372,13 @@ public class ConnectionManager {
                             }
                         } else {
                             Log.e(TAG, "Неожиданный формат ответа на запрос стрима: " + (args.length > 0 ? args[0] : "нет данных"));
-                            if (callback != null) callback.onError("Неожиданный формат ответа сервера");
+                            if (callback != null)
+                                callback.onError("Неожиданный формат ответа сервера");
                         }
                     } catch (Exception e) {
                         Log.e(TAG, "Ошибка обработки ответа на запрос стрима", e);
-                        if (callback != null) callback.onError("Ошибка обработки ответа: " + e.getMessage());
+                        if (callback != null)
+                            callback.onError("Ошибка обработки ответа: " + e.getMessage());
                     }
                 });
             });
@@ -385,7 +390,8 @@ public class ConnectionManager {
 
     public void stopStream(String feederId, SimpleCallback callback) {
         if (!isConnected()) {
-            if (callback != null) callback.onError("Нет подключения к серверу для остановки стрима");
+            if (callback != null)
+                callback.onError("Нет подключения к серверу для остановки стрима");
             return;
         }
         try {
@@ -407,11 +413,13 @@ public class ConnectionManager {
                             }
                         } else {
                             Log.e(TAG, "Неожиданный формат ответа на остановку стрима: " + (args.length > 0 ? args[0] : "нет данных"));
-                            if (callback != null) callback.onError("Неожиданный формат ответа сервера");
+                            if (callback != null)
+                                callback.onError("Неожиданный формат ответа сервера");
                         }
                     } catch (Exception e) {
                         Log.e(TAG, "Ошибка обработки ответа на остановку стрима", e);
-                        if (callback != null) callback.onError("Ошибка обработки ответа: " + e.getMessage());
+                        if (callback != null)
+                            callback.onError("Ошибка обработки ответа: " + e.getMessage());
                     }
                 });
             });
@@ -425,11 +433,10 @@ public class ConnectionManager {
     private String parseClientId(Object[] args) {
         try {
             for (int i = 0; i < args.length; i++) {
-                Log.d(TAG, "parseClientId - args[" + i + "]: " + (args[i] != null ? args[i].toString() : "null") +
-                        ", тип: " + (args[i] != null ? args[i].getClass().getName() : "null"));
+                Log.d(TAG, "parseClientId - args[" + i + "]: " + (args[i] != null ? args[i].toString() : "null") + ", тип: " + (args[i] != null ? args[i].getClass().getName() : "null"));
             }
 
-            // Проверяем args[1], так как логи показали, что ID там
+
             if (args.length > 1 && args[1] instanceof JSONObject) {
                 JSONObject jsonData = (JSONObject) args[1];
                 if (jsonData.has("id")) {
@@ -437,24 +444,20 @@ public class ConnectionManager {
                     Log.d(TAG, "Извлечен ID из JSON (args[1]): " + id);
                     return id;
                 }
-            }
-            // Резервная проверка args[0] на JSONObject
-            else if (args.length > 0 && args[0] instanceof JSONObject) {
+            } else if (args.length > 0 && args[0] instanceof JSONObject) {
                 JSONObject jsonData = (JSONObject) args[0];
                 if (jsonData.has("id")) {
                     String id = jsonData.getString("id");
                     Log.d(TAG, "Извлечен ID из JSON (args[0]): " + id);
                     return id;
                 }
-            }
-            // Резервная проверка args[0] на строку (не имя события)
-            else if (args.length > 0 && args[0] instanceof String) {
+            } else if (args.length > 0 && args[0] instanceof String) {
                 String potentialId = (String) args[0];
                 if (!"assign id".equals(potentialId)) {
                     Log.d(TAG, "Используем строку как ID: " + potentialId);
                     return potentialId;
                 } else {
-                    Log.w(TAG,"Получена строка 'assign id' как данные, игнорируем.");
+                    Log.w(TAG, "Получена строка 'assign id' как данные, игнорируем.");
                 }
             }
 
@@ -468,8 +471,7 @@ public class ConnectionManager {
     private void cleanupListeners(Socket sock) {
         if (sock != null) {
             Log.d(TAG, "cleanupListeners: Очистка ВСЕХ слушателей для сокета: " + (sock.id() != null ? sock.id() : "null"));
-            sock.off(); // Удаляет ВСЕ слушатели
+            sock.off();
         }
     }
-
 }

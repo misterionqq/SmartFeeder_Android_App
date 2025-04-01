@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -12,37 +13,36 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.SmartFeederZatichkaV20"
+        android:theme="@style/Theme.SmartFeederApp"
         android:usesCleartextTraffic="true"
         tools:targetApi="31">
 
-    <activity
-        android:name=".MainActivity"
-        android:exported="true"
-        android:windowSoftInputMode="adjustResize">
-        <intent-filter>
-            <action android:name="android.intent.action.MAIN" />
-            <category android:name="android.intent.category.LAUNCHER" />
-        </intent-filter>
-    </activity>
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
 
-    <activity
-        android:name=".FullscreenVideoActivity"
-        android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
-        android:exported="false"
-        android:theme="@style/Theme.AppCompat.NoActionBar" /> <!-- Полноэкранная тема -->
+        <activity
+            android:name=".FullscreenVideoActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.NoActionBar" />
 
-    <!-- Добавленная активность Настроек -->
-    <activity
-        android:name=".SettingsActivity"
-        android:exported="false"
-        android:label="Настройки подключения"
-        android:parentActivityName=".MainActivity"> <!-- Добавляет кнопку "Назад" в ActionBar -->
-        <meta-data
-            android:name="android.support.PARENT_ACTIVITY"
-            android:value=".MainActivity" />
-    </activity>
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="Настройки подключения"
+            android:parentActivityName=".MainActivity">
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value=".MainActivity" />
+        </activity>
 
-</application>
+    </application>
 
 </manifest>

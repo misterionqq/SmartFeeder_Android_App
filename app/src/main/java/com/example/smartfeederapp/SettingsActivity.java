@@ -37,7 +37,7 @@ public class SettingsActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_settings);
 
-        // Apply window insets like in MainActivity
+
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.settings_layout), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
@@ -45,7 +45,7 @@ public class SettingsActivity extends AppCompatActivity {
         });
 
         etServerAddress = findViewById(R.id.etServerAddressSettings);
-        etServerAddress.setText(DEFAULT_SERVER_ADDRESS); // Устанавливаем значение по умолчанию
+        etServerAddress.setText(DEFAULT_SERVER_ADDRESS);
         etClientId = findViewById(R.id.etClientIdSettings);
         btnConnectAndSave = findViewById(R.id.btnConnectAndSave);
         progressBar = findViewById(R.id.progressBarSettings);
@@ -54,11 +54,11 @@ public class SettingsActivity extends AppCompatActivity {
         btnGoToMain = findViewById(R.id.btnGoToMain);
 
         settingsManager = SettingsManager.getInstance(this);
-        // Pass application context to avoid leaks
+
         connectionManager = ConnectionManager.getInstance(getApplicationContext());
 
         loadSettings();
-        updateStatus(); // Initial status update
+        updateStatus();
 
         btnConnectAndSave.setOnClickListener(v -> connectAndSave());
         btnGoToMain.setOnClickListener(v -> finish());
@@ -66,16 +66,16 @@ public class SettingsActivity extends AppCompatActivity {
         btnDisconnectSettings.setOnClickListener(v -> {
             Log.d("SettingsActivity", "Нажата кнопка Отключиться");
             connectionManager.disconnect();
-            settingsManager.saveClientId(null); // Очищаем сохраненный ID
-            etClientId.setText(""); // Очищаем поле
+            settingsManager.saveClientId(null);
+            etClientId.setText("");
             Toast.makeText(this, "Отключено", Toast.LENGTH_SHORT).show();
         });
-        // Observe connection state changes from the ConnectionManager
+
         connectionManager.getConnectionState().observe(this, state -> updateStatus());
         connectionManager.getClientIdLiveData().observe(this, clientId -> {
             if (clientId != null) {
                 etClientId.setText(clientId);
-                // Save automatically when ID is assigned during the connection process
+
                 settingsManager.saveClientId(clientId);
             } else {
                 etClientId.setText("");
