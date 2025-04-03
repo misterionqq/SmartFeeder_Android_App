@@ -18,14 +18,15 @@ import com.google.android.material.textfield.TextInputEditText;
 
 /**
  * Activity for managing connection settings (server address, client ID).
- * Allows users to input the server address, initiate the connection process
- * (which obtains and saves the client ID), disconnect, and view the current status.
+ * Allows users to input the server address, initiate the process to obtain
+ * and save the client ID (without establishing a persistent connection),
+ * disconnect any active persistent connection (managed by ConnectionManager),
+ * and view the current connection status.
  */
 public class SettingsActivity extends AppCompatActivity {
 
     private static final String TAG = "SettingsActivity";
     private static final String DEFAULT_SERVER_ADDRESS = "192.168.2.41:5000";
-
 
     private TextInputEditText etServerAddress;
     private TextInputEditText etClientId;
@@ -54,7 +55,6 @@ public class SettingsActivity extends AppCompatActivity {
         });
 
         etServerAddress = findViewById(R.id.etServerAddressSettings);
-        etServerAddress.setText(DEFAULT_SERVER_ADDRESS);
         etClientId = findViewById(R.id.etClientIdSettings);
         btnConnectAndSave = findViewById(R.id.btnConnectAndSave);
         progressBar = findViewById(R.id.progressBarSettings);
@@ -68,7 +68,7 @@ public class SettingsActivity extends AppCompatActivity {
         loadSettings();
         updateStatus();
 
-        btnConnectAndSave.setOnClickListener(v -> connectAndSave());
+        btnConnectAndSave.setOnClickListener(v -> getIdAndSave());
         btnGoToMain.setOnClickListener(v -> finish());
 
         btnDisconnectSettings.setOnClickListener(v -> {
@@ -80,18 +80,15 @@ public class SettingsActivity extends AppCompatActivity {
         });
 
         connectionManager.getConnectionState().observe(this, state -> updateStatus());
+
         connectionManager.getClientIdLiveData().observe(this, clientId -> {
-            if (clientId != null) {
-                etClientId.setText(clientId);
-                settingsManager.saveClientId(clientId);
-            } else {
-                etClientId.setText("");
-            }
+            etClientId.setText(clientId != null ? clientId : "");
         });
     }
 
     /**
      * Loads the server address and client ID from SettingsManager and populates the input fields.
+     * Uses default server address if none is saved.
      */
     private void loadSettings() {
         String savedAddress = settingsManager.getServerAddress();
@@ -100,27 +97,27 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     /**
-     * Updates the status TextView and enables/disables buttons based on the current connection state.
+     * Updates the status TextView and enables/disables buttons based on the current connection state
+     * obtained from ConnectionManager.
      */
     private void updateStatus() {
         ConnectionManager.ConnectionState state = connectionManager.getConnectionState().getValue();
         String statusText = "Status: ";
-        boolean inProgress = false;
-        boolean isConnected = false;
+        boolean inProgressGettingId = false;
+        boolean isConnected = (state == ConnectionManager.ConnectionState.CONNECTED);
 
         if (state != null) {
             switch (state) {
                 case CONNECTED:
                     statusText += "Connected";
-                    isConnected = true;
                     break;
                 case CONNECTING_FOR_ID:
                     statusText += "Getting ID...";
-                    inProgress = true;
+                    inProgressGettingId = true;
                     break;
                 case CONNECTING_WITH_ID:
-                    statusText += "Connecting with ID...";
-                    inProgress = true;
+                    statusText += "Connecting...";
+                    inProgressGettingId = true;
                     break;
                 case DISCONNECTED:
                     statusText += "Disconnected";
@@ -136,16 +133,18 @@ public class SettingsActivity extends AppCompatActivity {
             statusText += "Unknown";
         }
         tvStatus.setText(statusText);
-        progressBar.setVisibility(inProgress ? View.VISIBLE : View.GONE);
+        progressBar.setVisibility(inProgressGettingId ? View.VISIBLE : View.GONE);
+
         btnDisconnectSettings.setEnabled(isConnected);
-        btnConnectAndSave.setEnabled(!isConnected && !inProgress);
+        btnConnectAndSave.setEnabled(!isConnected && !inProgressGettingId);
     }
 
     /**
-     * Initiates the connection process when the "Connect and Save" button is clicked.
-     * Saves the entered server address and calls ConnectionManager to get the client ID.
+     * Initiates the process to obtain/update the client ID when the button is clicked.
+     * Saves the entered server address first, then calls ConnectionManager to get the client ID.
+     * This method does NOT establish a persistent connection.
      */
-    private void connectAndSave() {
+    private void getIdAndSave() {
         String serverAddress = etServerAddress.getText().toString().trim();
 
         if (TextUtils.isEmpty(serverAddress)) {
@@ -160,23 +159,20 @@ public class SettingsActivity extends AppCompatActivity {
             @Override
             public void onSuccess(String clientId) {
                 runOnUiThread(() -> {
-                    Log.d(TAG, "ID received: " + clientId);
+                    Log.d(TAG, "ID received/updated: " + clientId);
                     settingsManager.saveClientId(clientId);
+                    Toast.makeText(SettingsActivity.this, "Client ID Saved!", Toast.LENGTH_SHORT).show();
                 });
             }
 
             @Override
             public void onConnected() {
-                runOnUiThread(() -> {
-                    Log.d(TAG, "Final connection successful.");
-                    Toast.makeText(SettingsActivity.this, "Connected!", Toast.LENGTH_SHORT).show();
-                });
             }
 
             @Override
             public void onError(String message) {
                 runOnUiThread(() -> {
-                    Log.e(TAG, "Error during connection process: " + message);
+                    Log.e(TAG, "Error getting/saving Client ID: " + message);
                     Toast.makeText(SettingsActivity.this, "Error: " + message, Toast.LENGTH_LONG).show();
                 });
             }

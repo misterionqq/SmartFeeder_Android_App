@@ -176,13 +176,11 @@ public class ConnectionManager {
     }
 
     /**
-     * Initiates the two-step process to get a client ID from the server.
-     * 1. Connects temporarily to request an ID.
-     * 2. On receiving the ID, disconnects the temporary socket.
-     * 3. Calls connectWithId to establish the final connection.
-     *
+     * Initiates the process to get a client ID from the server.
+     * Connects temporarily, gets the ID, updates LiveData and calls onSuccess, then disconnects.
+     * Does NOT establish a persistent connection afterward.
      * @param serverAddress The server address (ip:port).
-     * @param callback      Callback for success (ID received), final connection, or error.
+     * @param callback Callback for success (ID received) or error.
      */
     public void getClientIdFromServer(String serverAddress, ConnectionCallback callback) {
         updateState(ConnectionState.CONNECTING_FOR_ID);
@@ -204,7 +202,6 @@ public class ConnectionManager {
             Log.d(TAG, "Creating new socket to request ID from " + serverAddress);
 
             final Socket tempSocket = IO.socket("http://" + serverAddress, options);
-            this.socket = tempSocket;
 
             final Emitter.Listener connectListener = args -> mainHandler.post(() -> {
                 Log.d(TAG, "Connected to Socket.IO (for getting ID, socket: " + tempSocket.id() + ")");
@@ -222,40 +219,30 @@ public class ConnectionManager {
 
                     if (callback != null) callback.onSuccess(assignedClientId);
 
-                    Log.d(TAG, "Immediately calling connectWithId after receiving ID...");
-                    connectWithId(serverAddress, assignedClientId, callback);
-
+                    Log.d(TAG, "Disconnecting temporary socket after getting ID...");
+                    tempSocket.disconnect();
+                    updateState(ConnectionState.DISCONNECTED);
                 } else {
                     Log.e(TAG, "Failed to get ID from server (socket: " + tempSocket.id() + ")");
                     updateState(ConnectionState.ERROR);
                     if (callback != null) callback.onError("Failed to get ID from server");
-                    disconnect();
+                    tempSocket.disconnect();
+                    updateState(ConnectionState.ERROR);
                 }
             });
 
             final Emitter.Listener connectErrorListener = args -> mainHandler.post(() -> {
-                if (tempSocket == ConnectionManager.this.socket) {
-                    updateState(ConnectionState.ERROR);
-                    String errorMsg = args.length > 0 ? args[0].toString() : "Unknown error";
-                    Log.e(TAG, "Connection error (Get ID, socket: " + tempSocket.id() + "): " + errorMsg);
-                    cleanupListeners(tempSocket);
-                    if (callback != null) callback.onError("Connection error: " + errorMsg);
-                    disconnect();
-                } else {
-                    Log.w(TAG, "Received connection error for an already inactive socket.");
-                }
+                updateState(ConnectionState.ERROR);
+                String errorMsg = args.length > 0 ? args[0].toString() : "Unknown error";
+                Log.e(TAG, "Connection error (Get ID, socket: " + tempSocket.id() + "): " + errorMsg);
+                cleanupListeners(tempSocket);
+                if (callback != null) callback.onError("Connection error: " + errorMsg);
+
+                updateState(ConnectionState.ERROR);
             });
 
             final Emitter.Listener disconnectListener = args -> mainHandler.post(() -> {
-                if (tempSocket == ConnectionManager.this.socket && connectionState.getValue() == ConnectionState.CONNECTING_FOR_ID) {
-                    Log.w(TAG, "Temporary socket (Get ID, id: " + tempSocket.id() + ") disconnected before getting ID. Reason: " + (args.length > 0 ? args[0] : "no data"));
-                    updateState(ConnectionState.ERROR);
-                    if (callback != null) callback.onError("Disconnected before getting ID");
-                    cleanupListeners(tempSocket);
-                    socket = null;
-                } else {
-                    Log.d(TAG, "Received disconnect event for socket " + tempSocket.id() + ", but it's no longer relevant or phase passed.");
-                }
+                Log.d(TAG, "Temporary socket (Get ID, id: " + tempSocket.id() + ") disconnected. Reason: " + (args.length > 0 ? args[0] : "no data"));
             });
 
             tempSocket.on(Socket.EVENT_CONNECT, connectListener);
@@ -270,17 +257,15 @@ public class ConnectionManager {
             mainHandler.post(() -> Toast.makeText(appContext, "URI Error: " + e.getMessage(), Toast.LENGTH_SHORT).show());
             Log.e(TAG, "Error creating socket (Get ID)", e);
             if (callback != null) callback.onError("URI Error: " + e.getMessage());
-            socket = null;
         }
     }
 
     /**
-     * Establishes the final, authenticated connection to the server using the provided client ID.
+     * Establishes a persistent, authenticated connection to the server using the provided client ID.
      * Disconnects any existing socket before creating the new one.
-     *
      * @param serverAddress The server address (ip:port).
-     * @param clientId      The client ID to use for authentication.
-     * @param callback      Callback for final connection success or error.
+     * @param clientId The client ID to use for authentication.
+     * @param callback Callback for connection success or error.
      */
     public void connectWithId(String serverAddress, String clientId, ConnectionCallback callback) {
         updateClientId(clientId);
@@ -310,7 +295,6 @@ public class ConnectionManager {
 
         } catch (URISyntaxException e) {
             updateState(ConnectionState.ERROR);
-            updateClientId(null);
             mainHandler.post(() -> Toast.makeText(appContext, "URI Error: " + e.getMessage(), Toast.LENGTH_SHORT).show());
             Log.e(TAG, "Error creating socket (Connect with ID)", e);
             if (callback != null) callback.onError("URI Error: " + e.getMessage());
@@ -393,7 +377,7 @@ public class ConnectionManager {
 
     /**
      * Disconnects the current socket connection, if any.
-     * Clears the client ID and updates the connection state.
+     * Updates the connection state but KEEPS the client ID in LiveData.
      */
     public void disconnect() {
         Log.d(TAG, "disconnect() method called");
@@ -406,12 +390,12 @@ public class ConnectionManager {
                 Log.d(TAG, "Socket not connected, cleaning up listeners and nullifying...");
                 cleanupListeners(oldSocket);
                 socket = null;
+                updateState(ConnectionState.DISCONNECTED);
             }
         } else {
             Log.d(TAG, "Socket is already null.");
+            updateState(ConnectionState.DISCONNECTED);
         }
-        updateClientId(null);
-        updateState(ConnectionState.DISCONNECTED);
     }
 
     /**

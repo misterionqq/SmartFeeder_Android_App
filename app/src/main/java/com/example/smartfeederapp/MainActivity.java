@@ -98,6 +98,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     private StreamPlaybackHandler streamPlaybackHandler;
     private DownloadHandler downloadHandler;
     private Object activeFullscreenHandler = null;
+    private String pendingStreamFeederId = null;
 
     private ActivityResultLauncher<Intent> fullscreenLauncher;
     private ActivityResultLauncher<Intent> settingsLauncher;
@@ -135,7 +136,8 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
 
     /**
      * Called when the activity is first created. Initializes UI, managers, handlers,
-     * launchers, observers, and performs initial data loading or connection attempts.
+     * launchers, observers, and performs initial data loading and setup.
+     *
      * @param savedInstanceState If the activity is being re-initialized.
      */
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
@@ -192,25 +194,16 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
      * and permission requests.
      */
     private void initializeLaunchers() {
-        fullscreenLauncher = registerForActivityResult(
-                new ActivityResultContracts.StartActivityForResult(),
-                this::handleFullscreenResult
-        );
-        settingsLauncher = registerForActivityResult(
-                new ActivityResultContracts.StartActivityForResult(),
-                result -> {
-                    Log.d(TAG, "Returned from Settings, result code: " + result.getResultCode());
-                    updateConnectionStatusDisplay();
-                    apiClient.getApiService();
-                    if (connectionManager.isConnected()) {
-                        loadFeederList();
-                    }
-                }
-        );
-        requestPermissionLauncher = registerForActivityResult(
-                new ActivityResultContracts.RequestPermission(),
-                isGranted -> downloadHandler.onPermissionResult(isGranted)
-        );
+        fullscreenLauncher = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), this::handleFullscreenResult);
+        settingsLauncher = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+            Log.d(TAG, "Returned from Settings, result code: " + result.getResultCode());
+            updateConnectionStatusDisplay();
+            apiClient.getApiService();
+            if (connectionManager.isConnected()) {
+                loadFeederList();
+            }
+        });
+        requestPermissionLauncher = registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> downloadHandler.onPermissionResult(isGranted));
     }
 
     /**
@@ -248,10 +241,17 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     }
 
     /**
-     * Sets OnClickListeners for the main control buttons, delegating actions to handlers.
+     * Sets OnClickListeners for the main control buttons.
      */
     private void setupButtonClickListeners() {
-        btnLoadVideos.setOnClickListener(v -> videoListHandler.loadVideos());
+        btnLoadVideos.setOnClickListener(v -> {
+            if (apiClient.getApiService() == null) {
+                Toast.makeText(this, "API not available. Check server address in Settings.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            videoListHandler.loadVideos();
+        });
+
         btnRequestStream.setOnClickListener(v -> {
             String selectedFeederId = actvFeederId.getText().toString().trim();
             if (TextUtils.isEmpty(selectedFeederId) || !availableFeederIds.contains(selectedFeederId) || selectedFeederId.equals("No active feeders")) {
@@ -261,11 +261,24 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
             } else {
                 tilFeederId.setError(null);
             }
-            streamPlaybackHandler.requestAndStartStream(selectedFeederId);
+            connectAndRequestStreamIfNeeded(selectedFeederId);
         });
+
         btnSettings.setOnClickListener(v -> openSettings());
-        btnRefreshFeeders.setOnClickListener(v -> loadFeederList());
+        btnRefreshFeeders.setOnClickListener(v -> {
+            if (apiClient.getApiService() == null) {
+                Toast.makeText(this, "API not available. Check server address in Settings.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            /*
+            if (!connectionManager.isConnected()) {
+                Toast.makeText(this, "Not connected. Cannot refresh feeder list.", Toast.LENGTH_SHORT).show();
+                return;
+            }*/
+            loadFeederList();
+        });
     }
+
 
     /**
      * Registers the BroadcastReceiver for download completion events, handling SDK version differences.
@@ -281,19 +294,29 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     }
 
     /**
-     * Sets up LiveData observers to react to changes in connection state
+     * Sets up LiveData observers to react to changes in connection state, client ID,
      * and forced stream stop events from ConnectionManager.
      */
     private void setupObservers() {
         connectionManager.getConnectionState().observe(this, state -> {
             updateConnectionStatusDisplay();
-            boolean connected = state == ConnectionManager.ConnectionState.CONNECTED;
-            btnRequestStream.setEnabled(connected);
-            btnRefreshFeeders.setEnabled(connected);
-            btnLoadVideos.setEnabled(connected);
 
-            if (connected && availableFeederIds.isEmpty()) {
-                loadFeederList();
+            boolean apiAvailable = apiClient.getApiService() != null;
+
+            btnRequestStream.setEnabled(true);
+            btnRefreshFeeders.setEnabled(apiAvailable);
+            btnLoadVideos.setEnabled(apiAvailable);
+
+            if (state == ConnectionManager.ConnectionState.CONNECTED && pendingStreamFeederId != null) {
+                Log.d(TAG, "Connection established, proceeding with pending stream request for: " + pendingStreamFeederId);
+                streamPlaybackHandler.requestAndStartStream(pendingStreamFeederId);
+                pendingStreamFeederId = null;
+            } else if (pendingStreamFeederId != null &&
+                    (state == ConnectionManager.ConnectionState.DISCONNECTED || state == ConnectionManager.ConnectionState.ERROR)) {
+                Log.w(TAG, "Connection failed or disconnected while attempting to request stream for: " + pendingStreamFeederId);
+                Toast.makeText(this, "Connection failed. Cannot request stream.", Toast.LENGTH_SHORT).show();
+                pendingStreamFeederId = null;
+                progressBar.setVisibility(View.GONE);
             }
         });
 
@@ -304,32 +327,62 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
                 connectionManager.clearForceStopEvent();
             }
         });
+
+        connectionManager.getClientIdLiveData().observe(this, clientId -> {
+            if (clientId != null) {
+                Log.d(TAG, "Client ID updated/received in MainActivity: " + clientId);
+                if (pendingStreamFeederId != null && (connectionManager.getConnectionState().getValue() == ConnectionManager.ConnectionState.CONNECTING_FOR_ID || connectionManager.getConnectionState().getValue() == ConnectionManager.ConnectionState.DISCONNECTED)) {
+                    Log.d(TAG, "Client ID received while stream request was pending. Initiating connection...");
+                    String serverAddress = settingsManager.getServerAddress();
+                    if (serverAddress != null) {
+                        connectionManager.connectWithId(serverAddress, clientId, null);
+                    } else {
+                        Log.e(TAG, "Server address missing, cannot connect after getting ID.");
+                        Toast.makeText(this, "Server address missing. Go to Settings.", Toast.LENGTH_LONG).show();
+                        pendingStreamFeederId = null;
+                        progressBar.setVisibility(View.GONE);
+                    }
+                }
+            } else {
+                Log.d(TAG, "Client ID cleared in MainActivity observer.");
+            }
+        });
     }
 
     /**
-     * Performs initial actions when the activity starts, such as attempting auto-connect
-     * or loading the feeder list if already connected.
+     * Performs initial actions when the activity starts: updates status display
+     * and attempts to load initial data like video/feeder lists if API is ready.
      */
     private void performInitialLoad() {
         updateConnectionStatusDisplay();
-        if (settingsManager.areSettingsAvailable() && !connectionManager.isConnected()) {
-            attemptAutoConnect();
-        } else if (connectionManager.isConnected()) {
+
+        if (apiClient.getApiService() != null) {
+            videoListHandler.loadVideos();
             loadFeederList();
+        } else {
+            Log.w(TAG,"API Client not ready on initial load. Go to settings.");
+        }
+        if(settingsManager.getServerAddress() != null && settingsManager.getClientId() == null) {
+            Log.d(TAG,"Server address set but no client ID. Getting ID on startup...");
+            connectionManager.getClientIdFromServer(settingsManager.getServerAddress(), new ConnectionManager.ConnectionCallback() {
+                @Override public void onSuccess(String clientId) { Log.i(TAG,"Client ID obtained successfully on startup."); settingsManager.saveClientId(clientId); }
+                @Override public void onConnected() {}
+                @Override public void onError(String message) { Log.e(TAG,"Failed to get Client ID on startup: " + message); }
+            });
         }
     }
 
     /**
      * Loads the list of available feeders from the server via the API client.
-     * Updates the feeder selection dropdown upon successful retrieval.
+     * Requires an active connection as per server logic.
      */
     private void loadFeederList() {
         ApiService service = apiClient.getApiService();
         if (service == null) {
             Log.w(TAG, "ApiService not available, cannot load feeders.");
-            Toast.makeText(this, "Could not connect to API. Check server address.", Toast.LENGTH_SHORT).show();
             return;
         }
+
         progressBar.setVisibility(View.VISIBLE);
         Log.d(TAG, "Loading feeder list...");
 
@@ -437,7 +490,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     }
 
     /**
-     * Attempts to automatically connect to the server using saved settings.
+     * UNUSED - Attempts to automatically connect to the server using saved settings.
      */
     private void attemptAutoConnect() {
         String serverAddress = settingsManager.getServerAddress();
@@ -447,18 +500,9 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
             Log.d(TAG, "Attempting auto-connect...");
             Toast.makeText(this, "Auto-connecting...", Toast.LENGTH_SHORT).show();
             connectionManager.connectWithId(serverAddress, clientId, new ConnectionManager.ConnectionCallback() {
-                @Override
-                public void onSuccess(String clientId) { /* Not used */ }
-                @Override
-                public void onConnected() {
-                    runOnUiThread(() -> {
-                        Toast.makeText(MainActivity.this, "Auto-connect successful", Toast.LENGTH_SHORT).show();
-                    });
-                }
-                @Override
-                public void onError(String message) {
-                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Auto-connect error: " + message, Toast.LENGTH_LONG).show());
-                }
+                @Override public void onSuccess(String clientId) { /* Not used */ }
+                @Override public void onConnected() { runOnUiThread(() -> Toast.makeText(MainActivity.this, "Auto-connect successful", Toast.LENGTH_SHORT).show()); }
+                @Override public void onError(String message) { runOnUiThread(() -> Toast.makeText(MainActivity.this, "Auto-connect error: " + message, Toast.LENGTH_LONG).show()); }
             });
         } else {
             Log.d(TAG, "No saved settings for auto-connect.");
@@ -475,7 +519,6 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
 
     /**
      * Initiates launching the FullscreenVideoActivity for the given player.
-     * This method is marked as OptIn due to FullscreenVideoActivity using UnstableApi.
      * @param currentPlayer The ExoPlayer instance to be shown in fullscreen.
      */
     @OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
@@ -507,7 +550,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         }
 
         if (videoUri == null) {
-            Toast.makeText(this,"Failed to get URI for video/stream", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Failed to get URI for video/stream", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -567,5 +610,65 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         videoPlaybackHandler.releasePlayer();
         streamPlaybackHandler.releasePlayer();
         Log.d(TAG, "onDestroy MainActivity");
+    }
+
+    /**
+     * Checks connection and settings status, then initiates connection/ID retrieval
+     * if necessary before requesting a stream. Stores the target feeder ID if connection
+     * needs to be established first.
+     * @param feederId The ID of the feeder for the desired stream request.
+     */
+    private void connectAndRequestStreamIfNeeded(String feederId) {
+        if (connectionManager.isConnected()) {
+            Log.d(TAG, "Already connected. Requesting stream directly for: " + feederId);
+            streamPlaybackHandler.requestAndStartStream(feederId);
+        } else {
+            String serverAddress = settingsManager.getServerAddress();
+            String clientId = settingsManager.getClientId();
+
+            if (serverAddress != null) {
+                if (clientId != null) {
+                    Log.d(TAG, "Not connected, but settings available. Attempting connect before requesting stream for: " + feederId);
+                    pendingStreamFeederId = feederId;
+                    progressBar.setVisibility(View.VISIBLE);
+                    Toast.makeText(this, "Connecting...", Toast.LENGTH_SHORT).show();
+                    connectionManager.connectWithId(serverAddress, clientId, new ConnectionManager.ConnectionCallback() {
+                        @Override public void onSuccess(String id) { }
+                        @Override public void onConnected() { runOnUiThread(() -> progressBar.setVisibility(View.GONE));}
+                        @Override public void onError(String message) {
+                            runOnUiThread(() -> {
+                                progressBar.setVisibility(View.GONE);
+                                Toast.makeText(MainActivity.this, "Connection failed: " + message, Toast.LENGTH_LONG).show();
+                            });
+                        }
+                    });
+                } else {
+                    Log.d(TAG, "Not connected and Client ID missing. Attempting to get ID before requesting stream for: " + feederId);
+                    pendingStreamFeederId = feederId;
+                    progressBar.setVisibility(View.VISIBLE);
+                    connectionManager.getClientIdFromServer(serverAddress, new ConnectionManager.ConnectionCallback() {
+                        @Override
+                        public void onSuccess(String receivedClientId) {
+                            runOnUiThread(() -> {
+                                Log.d(TAG, "ID obtained successfully (" + receivedClientId + ") while requesting stream. Connection will follow.");
+                                settingsManager.saveClientId(receivedClientId);
+                            });
+                        }
+                        @Override public void onConnected() { /* Not called */ }
+                        @Override
+                        public void onError(String message) {
+                            runOnUiThread(() -> {
+                                progressBar.setVisibility(View.GONE);
+                                Toast.makeText(MainActivity.this, "Failed to get Client ID: " + message, Toast.LENGTH_LONG).show();
+                                pendingStreamFeederId = null;
+                            });
+                        }
+                    });
+                }
+            } else {
+                Log.w(TAG, "Cannot connect/get ID for stream: Server address not configured.");
+                Toast.makeText(this, "Server address not configured. Please go to Settings.", Toast.LENGTH_LONG).show();
+            }
+        }
     }
 }

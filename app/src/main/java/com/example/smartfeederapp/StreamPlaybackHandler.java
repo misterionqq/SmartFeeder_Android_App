@@ -89,11 +89,13 @@ public class StreamPlaybackHandler {
             return;
         }
 
+        /*
         String clientId = settingsManager.getClientId();
         if (!connectionManager.isConnected() || clientId == null) {
             Toast.makeText(context, "Not connected to server or Client ID missing. Check settings.", Toast.LENGTH_LONG).show();
             return;
         }
+        */
 
         if (currentStreamingFeederId != null && !currentStreamingFeederId.equals(feederId)) {
             Log.d(TAG, "Requested stream from different feeder, stopping previous (" + currentStreamingFeederId + ")");
@@ -176,7 +178,6 @@ public class StreamPlaybackHandler {
         if (feederIdToStop == null) {
             Log.w(TAG, "Attempting to stop stream, but current feeder ID is unknown.");
             stopLocalPlaybackAndHideUI();
-            disconnectIfConnected();
             return;
         }
 
@@ -195,7 +196,7 @@ public class StreamPlaybackHandler {
                 showProgress(false);
                 stopLocalPlaybackAndHideUI();
                 Toast.makeText(context, "Stream stopped", Toast.LENGTH_SHORT).show();
-                disconnectIfConnected();
+                connectionManager.disconnect();
             }
 
             @Override
@@ -204,7 +205,7 @@ public class StreamPlaybackHandler {
                 Log.e(TAG, "Server error stopping stream: " + message);
                 Toast.makeText(context, "Error stopping stream: " + message, Toast.LENGTH_LONG).show();
                 stopLocalPlaybackAndHideUI();
-                disconnectIfConnected();
+                connectionManager.disconnect();
             }
         });
     }

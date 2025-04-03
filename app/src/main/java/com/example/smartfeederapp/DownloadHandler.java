@@ -11,6 +11,7 @@ import android.os.Environment;
 import android.util.Log;
 import android.webkit.MimeTypeMap;
 import android.widget.Toast;
+import android.content.SharedPreferences;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.appcompat.app.AlertDialog;
@@ -23,6 +24,7 @@ import androidx.core.content.ContextCompat;
 public class DownloadHandler {
 
     private static final String TAG = "DownloadHandler";
+    private static final String PREFS_NAME = "DownloadHandlerPrefs";
 
     private final Activity activity;
     private final ActivityResultLauncher<String> requestPermissionLauncher;
@@ -72,7 +74,7 @@ public class DownloadHandler {
                 .setMessage("Notification permission is required to show download progress and completion status.")
                 .setPositiveButton("OK", (dialog, which) -> requestNotificationPermission())
                 .setNegativeButton("Cancel", (dialog, which) -> {
-                    Toast.makeText(activity, "Download will proceed without notifications.", Toast.LENGTH_SHORT).show();
+                    //Toast.makeText(activity, "Download will proceed without notifications.", Toast.LENGTH_SHORT).show();
                     startDownload(pendingDownloadItem);
                     pendingDownloadItem = null;
                 })
@@ -102,7 +104,7 @@ public class DownloadHandler {
                 pendingDownloadItem = null;
             }
         } else {
-            Toast.makeText(activity, "Notifications permission was not granted.", Toast.LENGTH_LONG).show();
+            // Toast.makeText(activity, "Notifications permission was not granted.", Toast.LENGTH_LONG).show();
             if (pendingDownloadItem != null) {
                 Log.w(TAG, "POST_NOTIFICATIONS permission denied, but attempting download anyway for: " + pendingDownloadItem.getFilename());
                 startDownload(pendingDownloadItem);

@@ -1,7 +1,7 @@
 package com.example.smartfeederapp;
 
 /**
- * Класс, представляющий элемент видео, полученный с сервера
+ * Represents a video item obtained from the server, containing its filename and URL.
  */
 public class VideoItem {
     private String filename;
