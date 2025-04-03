@@ -1,5 +1,6 @@
 package com.example.smartfeederapp;
 
+import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.net.Uri;
@@ -17,6 +18,11 @@ import androidx.media3.common.util.Util;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 
+/**
+ * Activity for displaying video playback in fullscreen landscape mode.
+ * Receives video URI, start position, and playback state via Intent extras.
+ * Returns the last playback position and state when finished.
+ */
 @UnstableApi
 public class FullscreenVideoActivity extends AppCompatActivity {
 
@@ -30,14 +36,18 @@ public class FullscreenVideoActivity extends AppCompatActivity {
     public static final String EXTRA_VIDEO_POSITION = "extra_video_position";
     public static final String EXTRA_PLAY_WHEN_READY = "extra_play_when_ready";
 
-
+    /**
+     * Called when the activity is first created.
+     * Sets up the layout, retrieves data from the intent, hides system UI,
+     * and sets the orientation to landscape.
+     * @param savedInstanceState If the activity is being re-initialized after previously being shut down.
+     */
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_fullscreen_video);
 
         playerView = findViewById(R.id.fullscreenPlayerView);
-
 
         if (getIntent() != null) {
             String uriString = getIntent().getStringExtra(EXTRA_VIDEO_URI);
@@ -48,12 +58,14 @@ public class FullscreenVideoActivity extends AppCompatActivity {
             startPlayWhenReady = getIntent().getBooleanExtra(EXTRA_PLAY_WHEN_READY, true);
         }
 
-
         hideSystemUi();
-
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
     }
 
+    /**
+     * Initializes the ExoPlayer instance, sets up the PlayerView,
+     * prepares the media item, and seeks to the starting position.
+     */
     private void initializePlayer() {
         if (videoUri == null) {
             finish();
@@ -71,15 +83,17 @@ public class FullscreenVideoActivity extends AppCompatActivity {
 
         playerView.setFullscreenButtonClickListener(isFullscreen -> {
             if (!isFullscreen) {
-
                 finishActivityWithResult();
             }
         });
     }
 
+    /**
+     * Releases the ExoPlayer instance to free up resources.
+     * Saves the current playback position and state before releasing.
+     */
     private void releasePlayer() {
         if (player != null) {
-
             startPosition = player.getCurrentPosition();
             startPlayWhenReady = player.getPlayWhenReady();
             player.release();
@@ -87,6 +101,9 @@ public class FullscreenVideoActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Initializes the player when the activity becomes visible (for API > 23).
+     */
     @Override
     protected void onStart() {
         super.onStart();
@@ -95,6 +112,10 @@ public class FullscreenVideoActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Initializes or reinitializes the player when the activity comes to the foreground.
+     * Also ensures system UI remains hidden.
+     */
     @Override
     protected void onResume() {
         super.onResume();
@@ -104,6 +125,9 @@ public class FullscreenVideoActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Releases the player when the activity is no longer visible (for API <= 23).
+     */
     @Override
     protected void onPause() {
         super.onPause();
@@ -112,6 +136,9 @@ public class FullscreenVideoActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Releases the player when the activity is stopped (for API > 23).
+     */
     @Override
     protected void onStop() {
         super.onStop();
@@ -120,7 +147,9 @@ public class FullscreenVideoActivity extends AppCompatActivity {
         }
     }
 
-
+    /**
+     * Configures the window for immersive fullscreen mode, hiding system bars.
+     */
     private void hideSystemUi() {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
@@ -134,12 +163,19 @@ public class FullscreenVideoActivity extends AppCompatActivity {
         decorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN);
     }
 
+    /**
+     * Handles the back button press by finishing the activity with the result.
+     */
     @Override
     public void onBackPressed() {
         finishActivityWithResult();
         super.onBackPressed();
     }
 
+    /**
+     * Prepares the result Intent with the current playback position and state,
+     * sets the result code to RESULT_OK, and finishes the activity.
+     */
     private void finishActivityWithResult() {
         Intent resultIntent = new Intent();
         long position = startPosition;
@@ -152,7 +188,7 @@ public class FullscreenVideoActivity extends AppCompatActivity {
 
         resultIntent.putExtra(EXTRA_VIDEO_POSITION, position);
         resultIntent.putExtra(EXTRA_PLAY_WHEN_READY, playWhenReady);
-        setResult(RESULT_OK, resultIntent);
+        setResult(Activity.RESULT_OK, resultIntent);
         finish();
     }
 }

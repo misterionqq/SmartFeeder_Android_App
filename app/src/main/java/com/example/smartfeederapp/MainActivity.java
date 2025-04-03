@@ -1,6 +1,5 @@
 package com.example.smartfeederapp;
 
-
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
@@ -54,8 +53,6 @@ import android.widget.AutoCompleteTextView;
 import com.google.android.material.textfield.TextInputLayout;
 
 import java.util.ArrayList;
-
-
 import java.util.List;
 
 import retrofit2.Call;
@@ -64,12 +61,16 @@ import retrofit2.Response;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 
-
+/**
+ * The main activity of the application.
+ * Displays connection status, feeder selection, video list, and playback controls.
+ * Coordinates interactions between UI elements and various handlers
+ * (Connection, API, VideoList, Playback, Download).
+ */
 public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVideoActionListener {
 
     private static final String TAG = "MainActivity";
 
-    // UI Elements
     private TextInputLayout tilFeederId;
     private AutoCompleteTextView actvFeederId;
     private Button btnRefreshFeeders;
@@ -85,12 +86,10 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     private ProgressBar progressBar;
     private PlayerView playerView;
 
-    // Adapters and Data
     private VideoAdapter videoAdapter;
     private List<String> availableFeederIds = new ArrayList<>();
     private ArrayAdapter<String> feederAdapter;
 
-    // Managers and Handlers
     private SettingsManager settingsManager;
     private ConnectionManager connectionManager;
     private ApiClient apiClient;
@@ -100,12 +99,13 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
     private DownloadHandler downloadHandler;
     private Object activeFullscreenHandler = null;
 
-    // Activity Result Launchers
     private ActivityResultLauncher<Intent> fullscreenLauncher;
     private ActivityResultLauncher<Intent> settingsLauncher;
     private ActivityResultLauncher<String> requestPermissionLauncher;
 
-
+    /**
+     * BroadcastReceiver to listen for download completion events from DownloadManager.
+     */
     private final BroadcastReceiver downloadCompleteReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -119,12 +119,12 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
                         int status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
                         String title = c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TITLE));
                         if (status == DownloadManager.STATUS_SUCCESSFUL) {
-                            Toast.makeText(context, "Файл '" + title + "' успешно скачан.", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(context, "File '" + title + "' downloaded successfully.", Toast.LENGTH_SHORT).show();
                         } else {
-                            Toast.makeText(context, "Ошибка скачивания файла '" + title + "'.", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(context, "Error downloading file '" + title + "'.", Toast.LENGTH_SHORT).show();
                         }
                     } catch (Exception e) {
-                        Log.e(TAG, "Ошибка при обработке завершения загрузки", e);
+                        Log.e(TAG, "Error processing download completion", e);
                     } finally {
                         c.close();
                     }
@@ -133,6 +133,11 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         }
     };
 
+    /**
+     * Called when the activity is first created. Initializes UI, managers, handlers,
+     * launchers, observers, and performs initial data loading or connection attempts.
+     * @param savedInstanceState If the activity is being re-initialized.
+     */
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -151,6 +156,9 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         performInitialLoad();
     }
 
+    /**
+     * Sets up window insets for edge-to-edge display.
+     */
     private void setupWindowInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
@@ -159,6 +167,9 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         });
     }
 
+    /**
+     * Initializes references to UI elements from the layout.
+     */
     private void initializeViews() {
         tilFeederId = findViewById(R.id.tilFeederId);
         actvFeederId = findViewById(R.id.actvFeederId);
@@ -176,19 +187,36 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         playerView = findViewById(R.id.playerView);
     }
 
+    /**
+     * Initializes ActivityResultLaunchers for handling results from other activities
+     * and permission requests.
+     */
     private void initializeLaunchers() {
-        fullscreenLauncher = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), this::handleFullscreenResult);
-        settingsLauncher = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
-            Log.d(TAG, "Вернулись из Настроек, код результата: " + result.getResultCode());
-            updateConnectionStatusDisplay();
-            apiClient.getApiService();
-            if (connectionManager.isConnected()) {
-                loadFeederList();
-            }
-        });
-        requestPermissionLauncher = registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> downloadHandler.onPermissionResult(isGranted));
+        fullscreenLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                this::handleFullscreenResult
+        );
+        settingsLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    Log.d(TAG, "Returned from Settings, result code: " + result.getResultCode());
+                    updateConnectionStatusDisplay();
+                    apiClient.getApiService();
+                    if (connectionManager.isConnected()) {
+                        loadFeederList();
+                    }
+                }
+        );
+        requestPermissionLauncher = registerForActivityResult(
+                new ActivityResultContracts.RequestPermission(),
+                isGranted -> downloadHandler.onPermissionResult(isGranted)
+        );
     }
 
+    /**
+     * Initializes singleton managers and creates handler instances, passing necessary dependencies.
+     * Also sets up fullscreen button listeners after handlers are created.
+     */
     private void initializeManagersAndHandlers() {
         settingsManager = SettingsManager.getInstance(this);
         connectionManager = ConnectionManager.getInstance(getApplicationContext());
@@ -211,17 +239,23 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         });
     }
 
+    /**
+     * Sets up the ArrayAdapter for the feeder selection AutoCompleteTextView.
+     */
     private void setupFeederDropdown() {
         feederAdapter = new ArrayAdapter<>(this, android.R.layout.simple_dropdown_item_1line, availableFeederIds);
         actvFeederId.setAdapter(feederAdapter);
     }
 
+    /**
+     * Sets OnClickListeners for the main control buttons, delegating actions to handlers.
+     */
     private void setupButtonClickListeners() {
         btnLoadVideos.setOnClickListener(v -> videoListHandler.loadVideos());
         btnRequestStream.setOnClickListener(v -> {
             String selectedFeederId = actvFeederId.getText().toString().trim();
-            if (TextUtils.isEmpty(selectedFeederId) || !availableFeederIds.contains(selectedFeederId)) {
-                tilFeederId.setError("Пожалуйста, выберите кормушку из списка");
+            if (TextUtils.isEmpty(selectedFeederId) || !availableFeederIds.contains(selectedFeederId) || selectedFeederId.equals("No active feeders")) {
+                tilFeederId.setError("Please select a feeder from the list");
                 actvFeederId.requestFocus();
                 return;
             } else {
@@ -229,11 +263,13 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
             }
             streamPlaybackHandler.requestAndStartStream(selectedFeederId);
         });
-
         btnSettings.setOnClickListener(v -> openSettings());
         btnRefreshFeeders.setOnClickListener(v -> loadFeederList());
     }
 
+    /**
+     * Registers the BroadcastReceiver for download completion events, handling SDK version differences.
+     */
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     private void registerDownloadReceiver() {
         IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
@@ -244,12 +280,14 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         }
     }
 
+    /**
+     * Sets up LiveData observers to react to changes in connection state
+     * and forced stream stop events from ConnectionManager.
+     */
     private void setupObservers() {
-        // Observer for Connection State
         connectionManager.getConnectionState().observe(this, state -> {
             updateConnectionStatusDisplay();
             boolean connected = state == ConnectionManager.ConnectionState.CONNECTED;
-
             btnRequestStream.setEnabled(connected);
             btnRefreshFeeders.setEnabled(connected);
             btnLoadVideos.setEnabled(connected);
@@ -259,17 +297,19 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
             }
         });
 
-        // Observer for Force Stream Stop
         connectionManager.getForceStoppedFeederId().observe(this, stoppedFeederId -> {
             if (stoppedFeederId != null) {
-                Log.d(TAG, "Получено событие принудительной остановки для feederId: " + stoppedFeederId);
-
+                Log.d(TAG, "Received forced stop event for feederId: " + stoppedFeederId);
                 streamPlaybackHandler.handleServerStreamStop(stoppedFeederId);
                 connectionManager.clearForceStopEvent();
             }
         });
     }
 
+    /**
+     * Performs initial actions when the activity starts, such as attempting auto-connect
+     * or loading the feeder list if already connected.
+     */
     private void performInitialLoad() {
         updateConnectionStatusDisplay();
         if (settingsManager.areSettingsAvailable() && !connectionManager.isConnected()) {
@@ -279,16 +319,19 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         }
     }
 
-
+    /**
+     * Loads the list of available feeders from the server via the API client.
+     * Updates the feeder selection dropdown upon successful retrieval.
+     */
     private void loadFeederList() {
         ApiService service = apiClient.getApiService();
         if (service == null) {
-            Log.w(TAG, "ApiService не доступен, не могу загрузить кормушки.");
-            Toast.makeText(this, "Не удалось подключиться к API. Проверьте адрес сервера.", Toast.LENGTH_SHORT).show();
+            Log.w(TAG, "ApiService not available, cannot load feeders.");
+            Toast.makeText(this, "Could not connect to API. Check server address.", Toast.LENGTH_SHORT).show();
             return;
         }
         progressBar.setVisibility(View.VISIBLE);
-        Log.d(TAG, "Загрузка списка кормушек...");
+        Log.d(TAG, "Loading feeder list...");
 
         service.getFeeders().enqueue(new Callback<List<String>>() {
             @Override
@@ -298,52 +341,69 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
                     List<String> feeders = response.body();
                     availableFeederIds.clear();
                     if (feeders.isEmpty()) {
-                        Toast.makeText(MainActivity.this, "Активных кормушек не найдено", Toast.LENGTH_SHORT).show();
-                        availableFeederIds.add("Нет активных кормушек");
+                        Toast.makeText(MainActivity.this, "No active feeders found", Toast.LENGTH_SHORT).show();
+                        availableFeederIds.add("No active feeders");
                     } else {
                         availableFeederIds.addAll(feeders);
-                        Toast.makeText(MainActivity.this, "Загружено " + feeders.size() + " кормушек", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(MainActivity.this, "Loaded " + feeders.size() + " feeders", Toast.LENGTH_SHORT).show();
                     }
                     feederAdapter.notifyDataSetChanged();
                 } else {
-                    handleApiError(response, "загрузки кормушек");
+                    handleApiError(response, "loading feeders");
                 }
             }
 
             @Override
             public void onFailure(@NonNull Call<List<String>> call, @NonNull Throwable t) {
                 progressBar.setVisibility(View.GONE);
-                Log.e(TAG, "Сетевая ошибка загрузки кормушек", t);
-                Toast.makeText(MainActivity.this, "Ошибка сети при загрузке кормушек: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+                Log.e(TAG, "Network error loading feeders", t);
+                Toast.makeText(MainActivity.this, "Network error loading feeders: " + t.getMessage(), Toast.LENGTH_SHORT).show();
             }
         });
     }
 
+    /**
+     * Called when the video name/item is clicked in the list. Delegates playback to the handler.
+     * @param videoItem The selected video item.
+     */
     @Override
     public void onVideoPlayClick(VideoItem videoItem) {
         activeFullscreenHandler = videoPlaybackHandler;
         videoPlaybackHandler.startPlayback(videoItem);
     }
 
+    /**
+     * Called when the download button is clicked for a video item. Delegates download to the handler.
+     * @param videoItem The selected video item.
+     */
     @Override
     public void onVideoDownloadClick(VideoItem videoItem) {
         downloadHandler.checkPermissionsAndDownload(videoItem);
     }
 
+    /**
+     * Determines which handler initiated the fullscreen request and triggers the process.
+     * @param handler The handler object (either VideoPlaybackHandler or StreamPlaybackHandler).
+     */
     private void handlePlayerFullscreenRequest(Object handler) {
         if (handler == videoPlaybackHandler) {
-            Log.d(TAG, "Fullscreen запрошен для плеера записей");
+            Log.d(TAG, "Fullscreen requested for recorded video player");
             activeFullscreenHandler = videoPlaybackHandler;
             startActivityForFullscreen(videoPlaybackHandler.getPlayer());
         } else if (handler == streamPlaybackHandler) {
-            Log.d(TAG, "Fullscreen запрошен для плеера стрима");
+            Log.d(TAG, "Fullscreen requested for stream player");
             activeFullscreenHandler = streamPlaybackHandler;
             startActivityForFullscreen(streamPlaybackHandler.getPlayer());
         } else {
-            Toast.makeText(this, "Неизвестный источник запроса fullscreen", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Unknown source for fullscreen request", Toast.LENGTH_SHORT).show();
         }
     }
 
+    /**
+     * Handles the result returned from FullscreenVideoActivity.
+     * Delegates the result processing to the handler that initiated the fullscreen mode.
+     * @param result The ActivityResult containing data from the fullscreen activity.
+     */
     private void handleFullscreenResult(ActivityResult result) {
         if (activeFullscreenHandler == videoPlaybackHandler) {
             videoPlaybackHandler.handleFullscreenResult(result);
@@ -355,97 +415,99 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         activeFullscreenHandler = null;
     }
 
+    /**
+     * Updates the connection status TextView based on the current state from ConnectionManager.
+     */
     private void updateConnectionStatusDisplay() {
         ConnectionManager.ConnectionState state = connectionManager.getConnectionState().getValue();
-        String statusText = "Статус: ";
+        String statusText = "Status: ";
         if (state != null) {
             switch (state) {
-                case CONNECTED:
-                    statusText += "Подключено";
-                    break;
-                case CONNECTING_FOR_ID:
-                    statusText += "Получение ID...";
-                    break;
-                case CONNECTING_WITH_ID:
-                    statusText += "Подключение...";
-                    break;
-                case DISCONNECTED:
-                    statusText += "Отключено";
-                    break;
-                case ERROR:
-                    statusText += "Ошибка";
-                    break;
-                default:
-                    statusText += "Неизвестно";
-                    break;
+                case CONNECTED:         statusText += "Connected"; break;
+                case CONNECTING_FOR_ID: statusText += "Getting ID..."; break;
+                case CONNECTING_WITH_ID:statusText += "Connecting..."; break;
+                case DISCONNECTED:      statusText += "Disconnected"; break;
+                case ERROR:             statusText += "Error"; break;
+                default:                statusText += "Unknown"; break;
             }
         } else {
-            statusText += "Неизвестно";
+            statusText += "Unknown";
         }
         tvConnectionStatusMain.setText(statusText);
     }
 
+    /**
+     * Attempts to automatically connect to the server using saved settings.
+     */
     private void attemptAutoConnect() {
         String serverAddress = settingsManager.getServerAddress();
         String clientId = settingsManager.getClientId();
 
         if (serverAddress != null && clientId != null) {
-            Log.d(TAG, "Попытка авто-подключения...");
-            Toast.makeText(this, "Авто-подключение...", Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "Attempting auto-connect...");
+            Toast.makeText(this, "Auto-connecting...", Toast.LENGTH_SHORT).show();
             connectionManager.connectWithId(serverAddress, clientId, new ConnectionManager.ConnectionCallback() {
                 @Override
                 public void onSuccess(String clientId) { /* Not used */ }
-
                 @Override
                 public void onConnected() {
                     runOnUiThread(() -> {
-                        Toast.makeText(MainActivity.this, "Авто-подключение успешно", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(MainActivity.this, "Auto-connect successful", Toast.LENGTH_SHORT).show();
                     });
                 }
-
                 @Override
                 public void onError(String message) {
-                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Ошибка авто-подключения: " + message, Toast.LENGTH_LONG).show());
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Auto-connect error: " + message, Toast.LENGTH_LONG).show());
                 }
             });
         } else {
-            Log.d(TAG, "Нет сохраненных настроек для авто-подключения.");
+            Log.d(TAG, "No saved settings for auto-connect.");
         }
     }
 
+    /**
+     * Opens the SettingsActivity.
+     */
     private void openSettings() {
         Intent intent = new Intent(this, SettingsActivity.class);
         settingsLauncher.launch(intent);
     }
 
+    /**
+     * Initiates launching the FullscreenVideoActivity for the given player.
+     * This method is marked as OptIn due to FullscreenVideoActivity using UnstableApi.
+     * @param currentPlayer The ExoPlayer instance to be shown in fullscreen.
+     */
     @OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
     private void openFullscreenActivity(ExoPlayer currentPlayer) {
         if (currentPlayer == videoPlaybackHandler.getPlayer()) {
-            activeFullscreenHandler = videoPlaybackHandler;
-            Log.d(TAG, "Fullscreen запрошен для плеера записей");
-            startActivityForFullscreen(videoPlaybackHandler.getPlayer());
+            handlePlayerFullscreenRequest(videoPlaybackHandler);
         } else if (currentPlayer == streamPlaybackHandler.getPlayer()) {
-            activeFullscreenHandler = streamPlaybackHandler;
-            Log.d(TAG, "Fullscreen запрошен для плеера стрима");
-            startActivityForFullscreen(streamPlaybackHandler.getPlayer());
+            handlePlayerFullscreenRequest(streamPlaybackHandler);
         } else {
-            Toast.makeText(this, "Неизвестный плеер для полноэкранного режима", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Unknown player for fullscreen mode", Toast.LENGTH_SHORT).show();
         }
     }
 
+
+    /**
+     * Starts the FullscreenVideoActivity with the necessary data from the player.
+     * @param player The ExoPlayer whose content will be displayed fullscreen.
+     */
     private void startActivityForFullscreen(ExoPlayer player) {
         if (player == null || player.getCurrentMediaItem() == null) {
-            Toast.makeText(this, "Нет данных для полноэкранного режима", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "No data for fullscreen mode", Toast.LENGTH_SHORT).show();
             return;
         }
         Uri videoUri = null;
         try {
             videoUri = player.getCurrentMediaItem().localConfiguration != null ? player.getCurrentMediaItem().localConfiguration.uri : Uri.parse(player.getCurrentMediaItem().mediaId);
         } catch (Exception e) {
-            Log.e(TAG, "Не удалось получить URI для fullscreen", e);
+            Log.e(TAG, "Failed to get URI for fullscreen", e);
         }
 
         if (videoUri == null) {
+            Toast.makeText(this,"Failed to get URI for video/stream", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -463,17 +525,25 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         fullscreenLauncher.launch(intent);
     }
 
+    /**
+     * Utility method to handle and log API errors from Retrofit responses.
+     * @param response The Retrofit response object.
+     * @param operationDescription A description of the failed operation for logging.
+     */
     private void handleApiError(Response<?> response, String operationDescription) {
         try {
-            String errorBody = response.errorBody() != null ? response.errorBody().string() : "Нет тела ошибки";
-            Log.e(TAG, "Ошибка " + operationDescription + ": " + response.code() + " - " + response.message() + " Body: " + errorBody);
-            Toast.makeText(this, "Ошибка " + operationDescription + ": " + response.code(), Toast.LENGTH_SHORT).show();
+            String errorBody = response.errorBody() != null ? response.errorBody().string() : "No error body";
+            Log.e(TAG, "Error " + operationDescription + ": " + response.code() + " - " + response.message() + " Body: " + errorBody);
+            Toast.makeText(this, "Error " + operationDescription + ": " + response.code(), Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
-            Log.e(TAG, "Ошибка чтения тела ошибки (" + operationDescription + ")", e);
-            Toast.makeText(this, "Ошибка " + operationDescription + ": " + response.code(), Toast.LENGTH_SHORT).show();
+            Log.e(TAG, "Error reading error body (" + operationDescription + ")", e);
+            Toast.makeText(this, "Error " + operationDescription + ": " + response.code(), Toast.LENGTH_SHORT).show();
         }
     }
 
+    /**
+     * Pauses playback when the activity is stopped.
+     */
     @Override
     protected void onStop() {
         super.onStop();
@@ -481,15 +551,17 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         streamPlaybackHandler.pause();
     }
 
+    /**
+     * Unregisters receivers and releases player resources when the activity is destroyed.
+     */
     @Override
     protected void onDestroy() {
         try {
             unregisterReceiver(downloadCompleteReceiver);
-            Log.d(TAG, "DownloadCompleteReceiver успешно отменен.");
+            Log.d(TAG, "DownloadCompleteReceiver unregistered successfully.");
         } catch (IllegalArgumentException e) {
-            Log.w(TAG, "Приемник downloadCompleteReceiver не был зарегистрирован или уже отменен.");
+            Log.w(TAG, "DownloadCompleteReceiver was not registered or already unregistered.");
         }
-
         super.onDestroy();
 
         videoPlaybackHandler.releasePlayer();

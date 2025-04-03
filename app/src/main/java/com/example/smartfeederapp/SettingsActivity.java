@@ -16,11 +16,16 @@ import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.material.textfield.TextInputEditText;
 
+/**
+ * Activity for managing connection settings (server address, client ID).
+ * Allows users to input the server address, initiate the connection process
+ * (which obtains and saves the client ID), disconnect, and view the current status.
+ */
 public class SettingsActivity extends AppCompatActivity {
 
-    private static final String TAG = "MainActivity";
+    private static final String TAG = "SettingsActivity";
     private static final String DEFAULT_SERVER_ADDRESS = "192.168.2.41:5000";
-    private static final String DEFAULT_FEEDER_ID = "750cec99-5311-4055-8da0-2aad1e531d6c";
+
 
     private TextInputEditText etServerAddress;
     private TextInputEditText etClientId;
@@ -32,11 +37,15 @@ public class SettingsActivity extends AppCompatActivity {
     private SettingsManager settingsManager;
     private ConnectionManager connectionManager;
 
+    /**
+     * Called when the activity is first created. Initializes UI, managers,
+     * loads settings, sets up listeners, and observes connection state.
+     * @param savedInstanceState If the activity is being re-initialized.
+     */
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_settings);
-
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.settings_layout), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
@@ -54,7 +63,6 @@ public class SettingsActivity extends AppCompatActivity {
         btnGoToMain = findViewById(R.id.btnGoToMain);
 
         settingsManager = SettingsManager.getInstance(this);
-
         connectionManager = ConnectionManager.getInstance(getApplicationContext());
 
         loadSettings();
@@ -64,18 +72,17 @@ public class SettingsActivity extends AppCompatActivity {
         btnGoToMain.setOnClickListener(v -> finish());
 
         btnDisconnectSettings.setOnClickListener(v -> {
-            Log.d("SettingsActivity", "Нажата кнопка Отключиться");
+            Log.d(TAG, "Disconnect button clicked");
             connectionManager.disconnect();
             settingsManager.saveClientId(null);
             etClientId.setText("");
-            Toast.makeText(this, "Отключено", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Disconnected", Toast.LENGTH_SHORT).show();
         });
 
         connectionManager.getConnectionState().observe(this, state -> updateStatus());
         connectionManager.getClientIdLiveData().observe(this, clientId -> {
             if (clientId != null) {
                 etClientId.setText(clientId);
-
                 settingsManager.saveClientId(clientId);
             } else {
                 etClientId.setText("");
@@ -83,70 +90,77 @@ public class SettingsActivity extends AppCompatActivity {
         });
     }
 
+    /**
+     * Loads the server address and client ID from SettingsManager and populates the input fields.
+     */
     private void loadSettings() {
-        etServerAddress.setText(settingsManager.getServerAddress());
+        String savedAddress = settingsManager.getServerAddress();
+        etServerAddress.setText(savedAddress != null ? savedAddress : DEFAULT_SERVER_ADDRESS);
         etClientId.setText(settingsManager.getClientId());
     }
 
+    /**
+     * Updates the status TextView and enables/disables buttons based on the current connection state.
+     */
     private void updateStatus() {
         ConnectionManager.ConnectionState state = connectionManager.getConnectionState().getValue();
-        String statusText = "Статус: ";
+        String statusText = "Status: ";
         boolean inProgress = false;
         boolean isConnected = false;
 
         if (state != null) {
             switch (state) {
                 case CONNECTED:
-                    statusText += "Подключено";
+                    statusText += "Connected";
                     isConnected = true;
                     break;
                 case CONNECTING_FOR_ID:
-                    statusText += "Получение ID...";
+                    statusText += "Getting ID...";
                     inProgress = true;
                     break;
                 case CONNECTING_WITH_ID:
-                    statusText += "Подключение с ID...";
+                    statusText += "Connecting with ID...";
                     inProgress = true;
                     break;
                 case DISCONNECTED:
-                    statusText += "Отключено";
+                    statusText += "Disconnected";
                     break;
                 case ERROR:
-                    statusText += "Ошибка подключения";
+                    statusText += "Connection Error";
                     break;
                 default:
-                    statusText += "Неизвестно";
+                    statusText += "Unknown";
                     break;
             }
         } else {
-            statusText += "Неизвестно";
+            statusText += "Unknown";
         }
         tvStatus.setText(statusText);
         progressBar.setVisibility(inProgress ? View.VISIBLE : View.GONE);
-
-
         btnDisconnectSettings.setEnabled(isConnected);
-
         btnConnectAndSave.setEnabled(!isConnected && !inProgress);
     }
 
-
+    /**
+     * Initiates the connection process when the "Connect and Save" button is clicked.
+     * Saves the entered server address and calls ConnectionManager to get the client ID.
+     */
     private void connectAndSave() {
         String serverAddress = etServerAddress.getText().toString().trim();
 
         if (TextUtils.isEmpty(serverAddress)) {
-            Toast.makeText(this, "Введите адрес сервера", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Please enter server address", Toast.LENGTH_SHORT).show();
             return;
         }
 
         settingsManager.saveServerAddress(serverAddress);
-        Log.d("SettingsActivity", "Адрес сервера сохранен: " + serverAddress);
+        Log.d(TAG, "Server address saved: " + serverAddress);
 
         connectionManager.getClientIdFromServer(serverAddress, new ConnectionManager.ConnectionCallback() {
             @Override
             public void onSuccess(String clientId) {
                 runOnUiThread(() -> {
-                    Log.d("SettingsActivity", "ID получен: " + clientId);
+                    Log.d(TAG, "ID received: " + clientId);
                     settingsManager.saveClientId(clientId);
                 });
             }
@@ -154,16 +168,16 @@ public class SettingsActivity extends AppCompatActivity {
             @Override
             public void onConnected() {
                 runOnUiThread(() -> {
-                    Log.d("SettingsActivity", "Финальное подключение успешно.");
-                    Toast.makeText(SettingsActivity.this, "Подключено!", Toast.LENGTH_SHORT).show();
+                    Log.d(TAG, "Final connection successful.");
+                    Toast.makeText(SettingsActivity.this, "Connected!", Toast.LENGTH_SHORT).show();
                 });
             }
 
             @Override
             public void onError(String message) {
                 runOnUiThread(() -> {
-                    Log.e("SettingsActivity", "Ошибка в процессе подключения: " + message);
-                    Toast.makeText(SettingsActivity.this, "Ошибка: " + message, Toast.LENGTH_LONG).show();
+                    Log.e(TAG, "Error during connection process: " + message);
+                    Toast.makeText(SettingsActivity.this, "Error: " + message, Toast.LENGTH_LONG).show();
                 });
             }
         });
