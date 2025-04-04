@@ -301,22 +301,32 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.OnVi
         connectionManager.getConnectionState().observe(this, state -> {
             updateConnectionStatusDisplay();
 
+            boolean connected = state == ConnectionManager.ConnectionState.CONNECTED;
             boolean apiAvailable = apiClient.getApiService() != null;
 
             btnRequestStream.setEnabled(true);
             btnRefreshFeeders.setEnabled(apiAvailable);
             btnLoadVideos.setEnabled(apiAvailable);
 
-            if (state == ConnectionManager.ConnectionState.CONNECTED && pendingStreamFeederId != null) {
-                Log.d(TAG, "Connection established, proceeding with pending stream request for: " + pendingStreamFeederId);
-                streamPlaybackHandler.requestAndStartStream(pendingStreamFeederId);
-                pendingStreamFeederId = null;
-            } else if (pendingStreamFeederId != null &&
-                    (state == ConnectionManager.ConnectionState.DISCONNECTED || state == ConnectionManager.ConnectionState.ERROR)) {
-                Log.w(TAG, "Connection failed or disconnected while attempting to request stream for: " + pendingStreamFeederId);
-                Toast.makeText(this, "Connection failed. Cannot request stream.", Toast.LENGTH_SHORT).show();
-                pendingStreamFeederId = null;
-                progressBar.setVisibility(View.GONE);
+            if (connected) {
+                if (pendingStreamFeederId != null) {
+                    Log.d(TAG, "Connection established, proceeding with pending stream request for: " + pendingStreamFeederId);
+                    streamPlaybackHandler.requestAndStartStream(pendingStreamFeederId);
+                    pendingStreamFeederId = null;
+                }
+            } else {
+                if (pendingStreamFeederId != null &&
+                        (state == ConnectionManager.ConnectionState.DISCONNECTED || state == ConnectionManager.ConnectionState.ERROR)) {
+                    Log.w(TAG, "Connection failed or disconnected while attempting to request stream for: " + pendingStreamFeederId);
+                    Toast.makeText(this, "Connection failed. Cannot request stream.", Toast.LENGTH_SHORT).show();
+                    pendingStreamFeederId = null;
+                    progressBar.setVisibility(View.GONE);
+                }
+
+                if (state == ConnectionManager.ConnectionState.DISCONNECTED || state == ConnectionManager.ConnectionState.ERROR) {
+                    Log.d(TAG, "Connection lost or error state detected. Hiding stream");
+                    streamPlaybackHandler.stopLocalPlaybackAndHideUI();
+                }
             }
         });
 

@@ -228,7 +228,7 @@ public class StreamPlaybackHandler {
     /**
      * Stops the local ExoPlayer playback and hides the stream UI elements.
      */
-    private void stopLocalPlaybackAndHideUI() {
+    void stopLocalPlaybackAndHideUI() {
         if (streamPlayer != null) {
             streamPlayer.stop();
             streamPlayer.clearMediaItems();
@@ -257,7 +257,7 @@ public class StreamPlaybackHandler {
     }
 
     /**
-     * Disconnects the socket connection via ConnectionManager if currently connected.
+     * UNUSED - Disconnects the socket connection via ConnectionManager if currently connected.
      */
     private void disconnectIfConnected() {
         if (connectionManager.isConnected()) {
