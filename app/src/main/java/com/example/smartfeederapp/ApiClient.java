@@ -63,7 +63,7 @@ public class ApiClient {
      */
     private synchronized void initializeApiService() {
         String serverAddress = settingsManager.getServerAddress();
-        if (!TextUtils.isEmpty(serverAddress)) {
+        if (serverAddress != null && !serverAddress.isEmpty()) {
             currentBaseUrl = "http://" + serverAddress + "/";
             try {
                 Retrofit retrofit = new Retrofit.Builder().baseUrl(currentBaseUrl).addConverterFactory(GsonConverterFactory.create()).build();
