@@ -24,14 +24,17 @@ android {
                 "proguard-rules.pro"
             )
         }
+        getByName("debug") {
+            enableAndroidTestCoverage = true
+            // isTestCoverageEnabled = true
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
-    
-    // Включаем поддержку r8 для библиотеки RTMP
-    packagingOptions {
+
+    packaging {
         jniLibs {
             keepDebugSymbols.add("**/*.so")
         }
@@ -44,6 +47,10 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.activity:activity:1.8.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.espresso.core)
+    testImplementation(libs.espresso.core)
+    testImplementation(libs.espresso.contrib)
+    testImplementation(libs.ext.junit)
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     testImplementation("org.mockito:mockito-core:5.15.2")
@@ -69,4 +76,14 @@ dependencies {
     
     // RTMP-поддержка для ExoPlayer
     implementation("androidx.media3:media3-datasource-rtmp:1.4.1")
+
+    // AndroidX Test Core
+    androidTestImplementation("androidx.test:runner:1.5.2")
+    androidTestImplementation("androidx.test:rules:1.5.0")
+
+    // Espresso Core
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+
+    // Espresso Contrib для RecyclerView Actions
+    androidTestImplementation("androidx.test.espresso:espresso-contrib:3.5.1")
 }

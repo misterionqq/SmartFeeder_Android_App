@@ -26,7 +26,8 @@ import com.google.android.material.textfield.TextInputEditText;
 public class SettingsActivity extends AppCompatActivity {
 
     private static final String TAG = "SettingsActivity";
-    private static final String DEFAULT_SERVER_ADDRESS = "192.168.2.41:5000";
+    // private static final String DEFAULT_SERVER_ADDRESS = "192.168.2.41:5000"; // My local test server, delete in prod.
+    private static final String DEFAULT_SERVER_ADDRESS = "";
 
     private TextInputEditText etServerAddress;
     private TextInputEditText etClientId;
