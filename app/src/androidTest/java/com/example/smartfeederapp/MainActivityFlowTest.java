@@ -2,6 +2,7 @@ package com.example.smartfeederapp;
 
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.Espresso.pressBack;
+import static androidx.test.espresso.action.ViewActions.clearText;
 import static androidx.test.espresso.action.ViewActions.click;
 import static androidx.test.espresso.action.ViewActions.closeSoftKeyboard;
 import static androidx.test.espresso.action.ViewActions.typeText;
@@ -51,7 +52,7 @@ public class MainActivityFlowTest {
         onView(withId(R.id.settings_layout)).check(matches(isDisplayed()));
 
         onView(withId(R.id.etServerAddressSettings))
-                .perform(typeText(testServerAddress), closeSoftKeyboard());
+                .perform(clearText(), typeText(testServerAddress), closeSoftKeyboard());
 
         onView(withId(R.id.etServerAddressSettings))
                 .check(matches(withText(testServerAddress)));
